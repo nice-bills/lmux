@@ -126,6 +126,7 @@ static void on_tab_button_clicked(GtkButton *button, gpointer user_data);
 static void on_tab_close_clicked(GtkButton *button, gpointer user_data);
 static void update_browser_tab_bar(AppState *state);
 static void show_shortcuts_help(AppState *state);
+static void rename_active_workspace(AppState *state);
 /* Get current working directory */
 static gchar*
 get_current_cwd(void)
@@ -1188,6 +1189,7 @@ show_shortcuts_help(AppState *state)
         "Ctrl+Tab       Next workspace",
         "Ctrl+Shift+Tab  Previous workspace",
         "Ctrl+W         Close workspace",
+        "Ctrl+Shift+R   Rename workspace",
         "1-9            Switch to workspace (Cmd+1-9)",
         NULL
     };
@@ -1259,6 +1261,79 @@ show_shortcuts_help(AppState *state)
     
     g_signal_connect_swapped(dialog, "response", G_CALLBACK(gtk_window_destroy), dialog);
     gtk_widget_set_visible(dialog, TRUE);
+}
+
+/* Rename active workspace */
+static void
+rename_active_workspace_response(GtkDialog *dialog, gint response_id, gpointer user_data)
+{
+    if (response_id == GTK_RESPONSE_OK) {
+        AppState *state = (AppState *)user_data;
+        GtkWidget *entry = g_object_get_data(G_OBJECT(dialog), "entry");
+        const gchar *new_name = gtk_editable_get_text(GTK_EDITABLE(entry));
+        
+        if (state->active_workspace_id > 0 && new_name && strlen(new_name) > 0) {
+            for (guint i = 0; i < state->workspace_count; i++) {
+                if (state->workspaces[i].id == state->active_workspace_id) {
+                    g_free(state->workspaces[i].name);
+                    state->workspaces[i].name = g_strdup(new_name);
+                    refresh_sidebar(state);
+                    g_print("Workspace renamed to: %s\n", new_name);
+                    break;
+                }
+            }
+        }
+    }
+    gtk_window_destroy(GTK_WINDOW(dialog));
+}
+
+static void
+rename_active_workspace(AppState *state)
+{
+    if (state->active_workspace_id == 0) return;
+    
+    /* Find current name */
+    gchar *current_name = NULL;
+    for (guint i = 0; i < state->workspace_count; i++) {
+        if (state->workspaces[i].id == state->active_workspace_id) {
+            current_name = g_strdup(state->workspaces[i].name);
+            break;
+        }
+    }
+    if (!current_name) return;
+    
+    GtkWidget *dialog = gtk_dialog_new_with_buttons(
+        "Rename Workspace",
+        GTK_WINDOW(state->window),
+        GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT,
+        "Cancel", GTK_RESPONSE_CANCEL,
+        "Rename", GTK_RESPONSE_OK,
+        NULL);
+    
+    GtkWidget *content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
+    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 12);
+    gtk_widget_set_margin_start(box, 20);
+    gtk_widget_set_margin_end(box, 20);
+    gtk_widget_set_margin_top(box, 20);
+    gtk_box_append(GTK_BOX(content), box);
+    
+    GtkWidget *label = gtk_label_new("Enter new workspace name:");
+    gtk_widget_set_halign(label, GTK_ALIGN_START);
+    gtk_box_append(GTK_BOX(box), label);
+    
+    GtkWidget *entry = gtk_entry_new();
+    gtk_editable_set_text(GTK_EDITABLE(entry), current_name);
+    gtk_editable_select_region(GTK_EDITABLE(entry), 0, -1);
+    gtk_box_append(GTK_BOX(box), entry);
+    g_object_set_data(G_OBJECT(dialog), "entry", entry);
+    
+    g_signal_connect(dialog, "response", G_CALLBACK(rename_active_workspace_response), state);
+    
+    gtk_window_set_default_size(GTK_WINDOW(dialog), 300, -1);
+    gtk_widget_set_visible(dialog, TRUE);
+    
+    gtk_widget_grab_focus(entry);
+    g_free(current_name);
 }
 
 /* ============================================================================
@@ -1767,19 +1842,10 @@ on_key_pressed(GtkEventControllerKey *controller,
         return TRUE;
     }
     
-    /* Ctrl+Shift+R: Toggle notification ring on active workspace (VAL-NOTIF-002) */
+    /* Ctrl+Shift+R: Rename active workspace */
     if ((state & GDK_CONTROL_MASK) && (state & GDK_SHIFT_MASK) && 
         (keyval == GDK_KEY_r || keyval == GDK_KEY_R)) {
-        if (state_app->active_workspace_id > 0) {
-            gboolean current_ring = FALSE;
-            for (guint i = 0; i < state_app->workspace_count; i++) {
-                if (state_app->workspaces[i].id == state_app->active_workspace_id) {
-                    current_ring = state_app->workspaces[i].has_notification_ring;
-                    break;
-                }
-            }
-            set_workspace_notification_ring(state_app, state_app->active_workspace_id, !current_ring);
-        }
+        rename_active_workspace(state_app);
         return TRUE;
     }
     
