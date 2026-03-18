@@ -1,0 +1,51 @@
+{
+  "featureId": "terminal-ghostty-integration",
+  "milestone": "terminal",
+  "status": "fail",
+  "issues": [
+    {
+      "severity": "blocking",
+      "description": "VAL-TERM-005 (Terminal Uses Ghostty) is NOT fulfilled. The implementation uses VTE (Virtual Terminal Emulator) instead of Ghostty. The commit message explicitly states: 'VAL-TERM-005 (uses Ghostty) uses VTE instead due to technical constraints'. The validation contract specifies 'The terminal uses Ghostty (the same as macOS version)'."
+    }
+  ],
+  "sharedStateObservations": [
+    {
+      "category": "validation-contract.md",
+      "observation": "Validation contract requires Ghostty but library documents VTE as acceptable alternative. The validation-contract.md defines VAL-TERM-005 as requiring Ghostty, but .factory/library/vte-terminal.md documents VTE as the implemented solution with justification. These are in conflict.",
+      "rationale": "The validation contract should be updated to reflect the accepted implementation approach, or the feature should explicitly document why an exception is being made to VAL-TERM-005."
+    },
+    {
+      "category": "AGENTS.md",
+      "observation": "Mission AGENTS.md mentions Ghostty is installed at /usr/bin/ghostty but doesn't document terminal implementation approach. The worker correctly identified VTE as available while Ghostty embedding is complex, but this wasn't explicitly documented in AGENTS.md.",
+      "rationale": "AGENTS.md should clarify whether terminal implementation can use VTE as an alternative to Ghostty embedding, given the technical constraints."
+    }
+  ],
+  "evidence": {
+    "codeChangesReviewed": true,
+    "handoffReviewed": true,
+    "assertionsVerified": {
+      "VAL-TERM-001": "pass",
+      "VAL-TERM-002": "pass",
+      "VAL-TERM-003": "pass",
+      "VAL-TERM-004": "pass",
+      "VAL-TERM-005": "fail"
+    }
+  },
+  "reviewDetails": {
+    "commitId": "15d8035",
+    "filesChanged": [
+      "cmuxd/build.sh",
+      "cmuxd/main_gui.c",
+      "cmuxd/vte_terminal.h (new)"
+    ],
+    "implementationSummary": "Created VTE-based terminal for cmux-linux. Added vte_terminal.h with VTE terminal widget implementation handling PTY, keyboard input, window resizing. Updated main_gui.c to use VTE terminal. Updated build.sh to link against VTE GTK4 library. Added socket command support for terminal.send.",
+    "technicalConstraint": "Worker cited that VTE GTK4 is available as a package while libghostty embedding requires building Ghostty from source with special flags (-Demit-xcframework=true). This is documented in .factory/library/vte-terminal.md.",
+    "verificationPerformed": {
+      "build": "Build completed successfully (exit code 0)",
+      "socketTests": "All 35 socket tests passed",
+      "terminalSpawn": "Terminal spawns shell with PID, shows title 'bills@bill:~/dev/cmux-linux/cmuxd'",
+      "socketCommand": "terminal.send command returns {\"status\":\"ok\",\"data\":{\"workspace_id\":1,\"bytes_written\":12}}"
+    }
+  },
+  "summary": "The terminal implementation is functionally complete - it renders a terminal, accepts input, executes commands, and resizes properly. However, it uses VTE instead of Ghostty, which fails VAL-TERM-005. There's a conflict between the validation contract (requiring Ghostty) and the library documentation (accepting VTE). The implementation appears sound given technical constraints, but the validation contract needs updating to reflect the accepted approach."
+}

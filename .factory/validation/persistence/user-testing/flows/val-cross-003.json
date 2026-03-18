@@ -1,0 +1,49 @@
+{
+  "assertions": ["VAL-CROSS-003"],
+  "status": "fail",
+  "results": [
+    {
+      "assertionId": "VAL-CROSS-003",
+      "status": "fail",
+      "reason": "Test session_persistence: 15/26 tests passed. Session save works but load is broken - JSON parser in session_persistence.c uses strstr() which finds nested 'id' fields inside workspace objects instead of top-level fields like 'active_workspace_id', causing workspace name, cwd, git_branch to not be loaded (all empty strings after load)"
+    }
+  ],
+  "evidence": {
+    "testBinary": "test_session_persistence",
+    "testCommand": "./test_session_persistence",
+    "testOutput": "15/26 tests passed",
+    "failingTests": [
+      "Active workspace ID matches: expected 1, got 0",
+      "Next workspace ID matches: expected 3, got 0",
+      "Workspace 1 name matches: expected 'main', got ''",
+      "Workspace 1 cwd matches: expected '/home/user/projects', got ''",
+      "Workspace 1 git_branch matches: expected 'main', got ''",
+      "Workspace 2 name matches: expected 'secondary', got ''",
+      "Workspace 2 cwd matches: expected '/tmp', got ''",
+      "Workspace 2 git_branch matches: expected 'feature-branch', got ''",
+      "Workspace 2 notification_count matches: expected 3, got 0",
+      "Name is not empty after load",
+      "CWD is not empty after load"
+    ],
+    "passingTests": [
+      "File path is not NULL",
+      "File path is not empty",
+      "File path contains test directory",
+      "Session save returns TRUE",
+      "Session load returns TRUE",
+      "Workspace count matches: 2",
+      "Workspace 1 ID matches: 1",
+      "Workspace 1 notification_count matches: 0",
+      "Workspace 2 ID matches: 2",
+      "Empty session save returns TRUE",
+      "Session with special chars saves",
+      "Session with special chars loads",
+      "Session saved before delete test",
+      "Session delete returns TRUE",
+      "Loading deleted session returns FALSE"
+    ]
+  },
+  "toolsUsed": ["custom_c_test_binary"],
+  "frictions": [],
+  "blockers": []
+}

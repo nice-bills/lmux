@@ -1,0 +1,28 @@
+{
+  "milestone": "integration",
+  "assertions": ["VAL-CROSS-001", "VAL-CROSS-002"],
+  "status": "pass",
+  "summary": {
+    "total": 2,
+    "passed": 2,
+    "failed": 0,
+    "blocked": 0
+  },
+  "results": {
+    "VAL-CROSS-001": {
+      "status": "pass",
+      "evidence": "Application started successfully, created workspaces, displayed vertical tab sidebar, browser split worked, D-Bus notifications sent successfully, socket server started and accepted connections"
+    },
+    "VAL-CROSS-002": {
+      "status": "pass",
+      "evidence": "CLI commands tested: workspace.create (PASS), workspace.list (PASS), terminal.send (PASS), focus.current (PASS). All socket automation commands work correctly."
+    }
+  },
+  "toolsUsed": ["test_cross_feature.sh", "main_gui", "cmux-cli"],
+  "environment": {
+    "display": ":0",
+    "daemon": "cinnamon (by GNOME)",
+    "notificationVersion": "6.6.7"
+  },
+  "timestamp": "2026-03-13T23:45:00Z"
+}

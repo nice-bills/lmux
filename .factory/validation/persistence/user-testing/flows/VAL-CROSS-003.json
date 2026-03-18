@@ -1,0 +1,12 @@
+{
+  "assertionId": "VAL-CROSS-003",
+  "assertionTitle": "Session Persistence",
+  "status": "fail",
+  "testOutput": "Test session_persistence: 15/26 tests passed\n\nFailing tests:\n- Active workspace ID matches: expected 1, got 0\n- Next workspace ID matches: expected 3, got 0\n- Workspace 1 name matches: expected 'main', got ''\n- Workspace 1 cwd matches: expected '/home/user/projects', got ''\n- Workspace 1 git_branch matches: expected 'main', got ''\n- Workspace 2 name matches: expected 'secondary', got ''\n- Workspace 2 cwd matches: expected '/tmp', got ''\n- Workspace 2 git_branch matches: expected 'feature-branch', got ''\n- Workspace 2 notification_count matches: expected 3, got 0\n- Name is not empty after load\n- CWD is not empty after load",
+  "evidence": "Test executable: cmuxd/test_session_persistence\nExit code: 1 (test failure)\nTest results: 15/26 passed\nLatest test run: 2026-03-13T19:00:00Z",
+  "rootCause": "JSON parser in session_persistence.c uses strstr() which finds nested 'id' fields inside workspace objects instead of top-level fields like 'active_workspace_id', causing workspace name, cwd, git_branch to not be loaded (all empty strings after load)",
+  "blocking": false,
+  "toolsUsed": ["test_session_persistence (C test executable)"],
+  "frictions": [],
+  "blockers": []
+}

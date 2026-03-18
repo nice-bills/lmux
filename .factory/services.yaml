@@ -1,0 +1,77 @@
+commands:
+  install: echo "No npm install needed for Zig/GTK project"
+  build: zig build
+  test: zig build test
+  lint: echo "Linting not configured yet"
+  # Zig should be in PATH, or use: export PATH="$HOME/.local/bin:$PATH"
+  setup: |
+    # Install Zig if not present
+    if ! command -v zig &> /dev/null; then
+      echo "Installing Zig..."
+      cd /tmp
+      wget -q https://ziglang.org/download/0.14.0/zig-linux-x86_64-0.14.0.tar.xz
+      tar -xf zig-linux-x86_64-0.14.0.tar.xz
+      rm zig-linux-x86_64-0.14.0.tar.xz
+      mkdir -p ~/.local
+      mv zig-linux-x86_64-0.14.0 ~/.local/zig
+      ln -sf ~/.local/zig/zig ~/.local/bin/zig
+      echo "Zig installed. Run: export PATH=\"\$HOME/.local/bin:\$PATH\""
+    fi
+  # GTK4 verification commands
+  gtk4-version: pkg-config --modversion gtk4
+  gtk4-build: |
+    cd cmuxd && gcc -o test_gtk4 test_gtk4.c $(pkg-config --cflags --libs gtk4)
+  gtk4-test: |
+    cd cmuxd && ./test_gtk4 &
+    sleep 2
+    wmctrl -l | grep cmux-linux
+  # Sidebar (vertical tab) build and test commands
+  sidebar-build: |
+    cd cmuxd && gcc -o main_gui main_gui.c browser.c notification.c $(pkg-config --cflags --libs gtk4 gio-2.0) -I./local-libs/include/webkitgtk-6.0 -I./local-libs/include/libsoup-3.0 -L./local-libs/lib -lwebkitgtk-6.0 -Wl,-rpath,/usr/lib/x86_64-linux-gnu -lutil -Wall
+  sidebar-test: |
+    cd cmuxd && timeout 3 ./main_gui
+  # Browser build and test commands (VAL-BROWSER-001, VAL-BROWSER-003)
+  browser-build: |
+    cd cmuxd && bash build-browser.sh
+  browser-test: |
+    cd cmuxd && timeout 3 ./test_browser
+  # Browser split test commands (VAL-BROWSER-002)
+  browser-split-test: |
+    cd cmuxd && DISPLAY=:0 timeout 30 ./test_browser_split
+  # Browser DevTools test commands (VAL-BROWSER-004)
+  browser-devtools-test: |
+    cd cmuxd && DISPLAY=:0 timeout 30 ./test_browser_devtools
+  # Socket server test commands (VAL-API-001)
+  socket-server-build: |
+    cd cmuxd && gcc -o test_socket_server test_socket_server.c socket_server.c $(pkg-config --cflags --libs gio-2.0 glib-2.0) -Wall
+  socket-server-test: |
+    cd cmuxd && timeout 10 ./test_socket_server
+  # Workspace commands test commands (VAL-API-002)
+  workspace-commands-build: |
+    cd cmuxd && gcc -o test_workspace_commands test_workspace_commands.c workspace_commands.c socket_server.c $(pkg-config --cflags --libs gio-2.0 glib-2.0) -Wall
+  workspace-commands-test: |
+    cd cmuxd && timeout 15 ./test_workspace_commands
+  # Terminal commands test commands (VAL-API-003)
+  terminal-commands-build: |
+    cd cmuxd && gcc -o test_terminal_commands test_terminal_commands.c terminal_commands.c socket_server.c $(pkg-config --cflags --libs gio-2.0 glib-2.0) -lutil -Wall
+  terminal-commands-test: |
+    cd cmuxd && timeout 15 ./test_terminal_commands
+  # Focus commands test commands (VAL-API-004)
+  focus-commands-build: |
+    cd cmuxd && gcc -o test_focus_commands test_focus_commands.c focus_commands.c socket_server.c $(pkg-config --cflags --libs gio-2.0 glib-2.0) -Wall
+  focus-commands-test: |
+    cd cmuxd && timeout 15 ./test_focus_commands
+  # CLI tool build and test commands (VAL-API-005)
+  cli-build: |
+    cd cmuxd && gcc -o cmux-cli cli.c $(pkg-config --cflags --libs gio-2.0 glib-2.0) -Wall
+  cli-test-build: |
+    cd cmuxd && gcc -o test_cli test_cli.c socket_server.c workspace_commands.c terminal_commands.c focus_commands.c $(pkg-config --cflags --libs gio-2.0 glib-2.0) -lutil -Wall
+  cli-test: |
+    cd cmuxd && timeout 60 ./test_cli
+  # Cross-feature integration tests (VAL-CROSS-001, VAL-CROSS-002)
+  cross-feature-test: |
+    cd cmuxd && timeout 30 ./test_cross_feature.sh
+
+services:
+  # No long-running services needed for this desktop app
+  # The app will be built and run for testing

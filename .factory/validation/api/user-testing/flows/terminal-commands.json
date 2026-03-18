@@ -1,0 +1,12 @@
+{
+  "milestone": "api",
+  "group": "terminal-commands",
+  "assertions": ["VAL-API-003"],
+  "status": "pass",
+  "evidence": "test_terminal_commands passed 100/100 tests",
+  "testsRun": 100,
+  "testsPassed": 100,
+  "testsFailed": 0,
+  "toolUsed": "unit-test-binary",
+  "notes": "Terminal commands unit tests cover: terminal.send/read parsing, PTY operations, socket integration. Tests run against test binaries in cmuxd/ directory."
+}

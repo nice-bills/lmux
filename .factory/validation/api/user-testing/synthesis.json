@@ -1,0 +1,22 @@
+{
+  "milestone": "api",
+  "round": 1,
+  "status": "pass",
+  "assertionsSummary": {
+    "total": 5,
+    "passed": 5,
+    "failed": 0,
+    "blocked": 0
+  },
+  "passedAssertions": [
+    "VAL-API-001",
+    "VAL-API-002",
+    "VAL-API-003",
+    "VAL-API-004",
+    "VAL-API-005"
+  ],
+  "failedAssertions": [],
+  "blockedAssertions": [],
+  "appliedUpdates": [],
+  "previousRound": null
+}

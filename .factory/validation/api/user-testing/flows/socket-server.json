@@ -1,0 +1,12 @@
+{
+  "milestone": "api",
+  "group": "socket-server",
+  "assertions": ["VAL-API-001"],
+  "status": "pass",
+  "evidence": "test_socket_server passed 35/35 tests",
+  "testsRun": 35,
+  "testsPassed": 35,
+  "testsFailed": 0,
+  "toolUsed": "unit-test-binary",
+  "notes": "Socket server unit tests cover: server creation, start/stop, welcome message, command dispatch. Tests run against test binaries in cmuxd/ directory."
+}
