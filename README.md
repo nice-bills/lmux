@@ -1,4 +1,4 @@
-# cmux-linux
+# lmux
 
 A terminal multiplexer with built-in browser for Linux, built with VTE and WebKitGTK.
 
@@ -16,10 +16,15 @@ A terminal multiplexer with built-in browser for Linux, built with VTE and WebKi
 ./build.sh
 ```
 
-## Running
+## Installing
 
 ```bash
-./main_gui
+sudo make install    # Install to /usr/local
+```
+
+Or for development:
+```bash
+./lmux    # Run directly after build
 ```
 
 ## Keyboard Shortcuts
