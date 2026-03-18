@@ -41,6 +41,7 @@ Or for development:
 | `Ctrl+Shift+N` | Toggle notification panel |
 | `Ctrl+Shift+S` | Toggle sidebar |
 | `Ctrl+Shift+D` | Toggle window decorations |
+| `Ctrl+Shift+R` | Rename workspace |
 | `?` | Show help |
 
 ## Requirements
