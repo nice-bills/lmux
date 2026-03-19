@@ -468,91 +468,79 @@ create_sidebar_item(WorkspaceData *ws, AppState *state, guint index)
     gtk_widget_set_opacity(close_btn, 0);  /* Hidden by default, shown on hover */
     gtk_box_append(GTK_BOX(item_box), close_btn);
     
-    /* Clean dark theme CSS */
+    /* Clean dark theme CSS with modern styling */
     css_provider = gtk_css_provider_new();
     gtk_css_provider_load_from_string(css_provider,
-        /* Kitty-style sidebar items */
+        /* Sidebar items - frosted glass effect */
         ".sidebar-item {"
         "  background: transparent;"
-        "  border-radius: 4px;"
-        "  margin: 1px 4px;"
-        "  padding: 6px 8px;"
-        "  transition: background 0.2s cubic-bezier(0.4, 0, 0.2, 1), padding 0.2s ease;"
+        "  border-radius: 8px;"
+        "  margin: 2px 6px;"
+        "  padding: 8px 10px;"
+        "  transition: background 0.2s ease, padding 0.2s ease;"
         "}"
         ".sidebar-item:hover {"
-        "  background: #2a2a2a;"
-        "  padding-left: 12px;"
+        "  background: rgba(255,255,255,0.08);"
+        "  padding-left: 14px;"
         "}"
         ".sidebar-item.active {"
-        "  background: #333333;"
+        "  background: rgba(0, 170, 255, 0.15);"
         "  color: #ffffff;"
-        "  transition: background 0.2s cubic-bezier(0.4, 0, 0.2, 1);"
+        "  border-left: 3px solid #00aaff;"
+        "  padding-left: 11px;"
         "}"
         ".git-branch {"
-        "  color: #666666;"
-        "  font-size: 0.75em;"
-        "  font-family: monospace;"
-        "  transition: color 0.15s ease;"
-        "}"
-        ".cwd-label {"
-        "  color: #555555;"
+        "  color: rgba(100, 200, 255, 0.6);"
         "  font-size: 0.7em;"
         "  font-family: monospace;"
-        "  transition: color 0.15s ease;"
+        "}"
+        ".cwd-label {"
+        "  color: rgba(255,255,255,0.35);"
+        "  font-size: 0.65em;"
+        "  font-family: monospace;"
         "}"
         ".notification-badge {"
-        "  background: #cc0000;"
+        "  background: linear-gradient(135deg, #ff4444, #cc0000);"
         "  color: #ffffff;"
-        "  border-radius: 6px;"
-        "  padding: 1px 5px;"
-        "  font-size: 0.65em;"
+        "  border-radius: 10px;"
+        "  padding: 2px 6px;"
+        "  font-size: 0.6em;"
         "  font-weight: bold;"
-        "  transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275), background 0.2s ease;"
+        "  box-shadow: 0 2px 4px rgba(0,0,0,0.3);"
         "  animation: badge-pulse 2s ease-in-out infinite;"
         "}"
         "@keyframes badge-pulse {"
-        "  0%, 100% { transform: scale(1); }"
-        "  50% { transform: scale(1.05); }"
+        "  0%, 100% { transform: scale(1); box-shadow: 0 2px 4px rgba(0,0,0,0.3); }"
+        "  50% { transform: scale(1.1); box-shadow: 0 3px 8px rgba(255,50,50,0.4); }"
         "}"
         ".notification-badge:hover {"
         "  transform: scale(1.15);"
         "  animation: none;"
         "}"
         ".notification-ring-indicator {"
-        "  color: #00aaff;"
-        "  animation: ring-pulse 1.5s ease-in-out infinite;"
-        "}"
-        "@keyframes ring-pulse {"
-        "  0%, 100% { opacity: 1; transform: scale(1); }"
-        "  50% { opacity: 0.6; transform: scale(0.85); }"
+        "  color: #00ccff;"
+        "  text-shadow: 0 0 8px rgba(0, 200, 255, 0.5);"
         "}"
         ".dim-label {"
-        "  color: #666666;"
-        "  font-size: 0.8em;"
+        "  color: rgba(255,255,255,0.4);"
+        "  font-size: 0.75em;"
         "}"
         ".shortcut-hint {"
-        "  color: #444444;"
-        "  font-size: 0.65em;"
+        "  color: rgba(255,255,255,0.25);"
+        "  font-size: 0.6em;"
         "  font-family: monospace;"
-        "  transition: opacity 0.3s ease, color 0.2s ease;"
         "}"
         ".sidebar-item:hover .shortcut-hint {"
-        "  opacity: 0.8;"
-        "  color: #666666;"
-        "}"
-        ".sidebar-item:hover .close-button {"
         "  opacity: 0.6;"
         "}"
         ".close-button {"
         "  opacity: 0;"
-        "  transition: opacity 0.2s ease, background 0.2s ease, transform 0.2s ease;"
-        "  transform: scale(0.9);"
+        "  transition: opacity 0.2s ease, background 0.2s ease;"
+        "  border-radius: 4px;"
         "}"
         ".close-button:hover {"
         "  opacity: 1;"
-        "  background: #555555;"
-        "  border-radius: 3px;"
-        "  transform: scale(1);"
+        "  background: rgba(255,80,80,0.3);"
         "}"
     );
     
@@ -823,30 +811,54 @@ toggle_focus_mode(AppState *state)
     state->focus_mode = !state->focus_mode;
     
     if (state->focus_mode) {
-        /* Entering focus mode - store current visibility and hide */
+        /* Entering zen mode - full focus on terminal */
         state->sidebar_visible_before_focus = state->sidebar_visible;
         state->browser_visible_before_focus = state->browser_visible;
         
-        /* Hide sidebar */
-        if (state->sidebar_paned && state->sidebar_visible) {
+        /* Hide sidebar completely */
+        if (state->sidebar_paned) {
             gtk_paned_set_position(GTK_PANED(state->sidebar_paned), 0);
-            state->sidebar_visible = FALSE;
         }
+        state->sidebar_visible = FALSE;
         
-        /* Hide browser if visible */
+        /* Hide browser */
         if (state->browser_visible && state->browser_manager) {
             close_browser_split(state);
         }
         
-        g_print("Focus mode ON - sidebar and browser hidden\n");
+        /* Apply zen mode CSS - minimal UI, just terminal */
+        GtkCssProvider *zen_css = gtk_css_provider_new();
+        gtk_css_provider_load_from_string(zen_css,
+            "window { background: rgba(10, 10, 15, 0.95); }"
+            "headerbar, .titlebar { opacity: 0.3; transition: opacity 0.3s ease; }"
+            "headerbar:hover, .titlebar:hover { opacity: 1.0; }"
+        );
+        gtk_style_context_add_provider_for_display(
+            gdk_display_get_default(),
+            GTK_STYLE_PROVIDER(zen_css),
+            GTK_STYLE_PROVIDER_PRIORITY_APPLICATION + 1
+        );
+        
+        g_object_set_data(G_OBJECT(state->window), "zen-css", zen_css);
+        g_print("Zen mode ON - distraction free\n");
     } else {
-        /* Exiting focus mode - restore previous visibility */
-        if (state->sidebar_paned && !state->sidebar_visible) {
-            gtk_paned_set_position(GTK_PANED(state->sidebar_paned), 220);  /* Default sidebar width */
-            state->sidebar_visible = state->sidebar_visible_before_focus;
+        /* Exiting zen mode */
+        if (state->sidebar_paned) {
+            gtk_paned_set_position(GTK_PANED(state->sidebar_paned), 220);
+        }
+        state->sidebar_visible = state->sidebar_visible_before_focus;
+        
+        /* Remove zen CSS */
+        GtkCssProvider *zen_css = g_object_get_data(G_OBJECT(state->window), "zen-css");
+        if (zen_css) {
+            gtk_style_context_remove_provider_for_display(
+                gdk_display_get_default(),
+                GTK_STYLE_PROVIDER(zen_css));
+            g_object_unref(zen_css);
+            g_object_set_data(G_OBJECT(state->window), "zen-css", NULL);
         }
         
-        g_print("Focus mode OFF - sidebar and browser restored\n");
+        g_print("Zen mode OFF\n");
     }
 }
 
@@ -2591,7 +2603,7 @@ activate(GtkApplication *app, gpointer user_data)
     gtk_window_set_title(GTK_WINDOW(state->window), "cmux-linux");
     gtk_window_set_titlebar(GTK_WINDOW(state->window), headerbar);
     
-    /* Apply main window styling */
+    /* Apply main window styling with transparency */
     css_provider = gtk_css_provider_new();
     gtk_css_provider_load_from_string(css_provider,
         /* ========== GPU Acceleration & Performance ========== */
@@ -2605,28 +2617,28 @@ activate(GtkApplication *app, gpointer user_data)
         "  scrollbar-color: #333333 transparent;"
         "}"
         
-        /* ========== Kitty-style Theme ========== */
+        /* ========== Modern Dark Theme with Transparency ========== */
         
-        /* Window - pure black background */
+        /* Window - semi-transparent dark */
         "window {"
-        "  background: #000000;"
-        "  color: #ffffff;"
+        "  background: rgba(15, 15, 20, 0.95);"
+        "  color: #e0e0e0;"
         "}"
         
-        /* Main container - black */
+        /* Main container */
         "box {"
-        "  background: #000000;"
+        "  background: transparent;"
         "}"
         
-        /* Titlebar - minimal dark style */
+        /* Titlebar - frosted glass effect */
         "headerbar, .titlebar {"
-        "  background: #1a1a1a;"
+        "  background: rgba(30, 30, 40, 0.85);"
         "  color: #ffffff;"
-        "  border-bottom: 1px solid #2a2a2a;"
-        "  box-shadow: none;"
+        "  border-bottom: 1px solid rgba(255,255,255,0.1);"
+        "  box-shadow: 0 1px 3px rgba(0,0,0,0.3);"
         "}"
         "headerbar:backdrop, .titlebar:backdrop {"
-        "  background: #1a1a1a;"
+        "  background: rgba(30, 30, 40, 0.7);"
         "}"
         
         /* Window buttons - subtle */
@@ -2635,63 +2647,64 @@ activate(GtkApplication *app, gpointer user_data)
         "  border: none;"
         "  color: #888888;"
         "  padding: 8px;"
+        "  border-radius: 6px;"
         "  transition: color 0.15s ease, background 0.15s ease;"
         "}"
         "headerbar button.titlebutton:hover, .titlebar button.titlebutton:hover {"
-        "  background: rgba(255,255,255,0.1);"
+        "  background: rgba(255,255,255,0.15);"
         "  color: #ffffff;"
         "}"
         "headerbar button.titlebutton.close:hover, .titlebar button.titlebutton.close:hover {"
-        "  background: #cc0000;"
+        "  background: rgba(220, 50, 50, 0.8);"
         "  color: #ffffff;"
         "}"
         
-        /* Sidebar - dark panel */
+        /* Sidebar - frosted glass */
         "sidebar {"
-        "  background: #1a1a1a;"
-        "  border-right: 1px solid #2a2a2a;"
+        "  background: rgba(25, 25, 35, 0.9);"
+        "  border-right: 1px solid rgba(255,255,255,0.08);"
         "}"
         "sidebar > scrolledwindow > viewport > box {"
-        "  background: #1a1a1a;"
+        "  background: transparent;"
         "}"
         
         /* Paned separators - subtle, smooth hover */
         "paned > separator {"
-        "  background: #2a2a2a;"
-        "  min-width: 6px;"
-        "  min-height: 6px;"
+        "  background: rgba(255,255,255,0.05);"
+        "  min-width: 4px;"
+        "  min-height: 4px;"
         "  transition: background 0.2s ease, width 0.2s ease, height 0.2s ease;"
         "}"
         "paned.horizontal > separator {"
-        "  min-width: 6px;"
-        "  border-radius: 3px;"
+        "  min-width: 4px;"
+        "  border-radius: 2px;"
         "}"
         "paned.vertical > separator {"
-        "  min-height: 6px;"
-        "  border-radius: 3px;"
+        "  min-height: 4px;"
+        "  border-radius: 2px;"
         "}"
         "paned > separator:hover {"
-        "  background: #444444;"
+        "  background: rgba(255,255,255,0.2);"
         "}"
         
         /* Notification ring - glowing blue "Ring of Fire" */
         ".notification-ring {"
         "  border: 2px solid #00aaff;"
-        "  border-radius: 6px;"
-        "  background: #000000;"
-        "  box-shadow: 0 0 15px #00aaff, 0 0 30px #00aaff40, inset 0 0 10px #00aaff20;"
-        "  transition: box-shadow 0.3s ease, border-color 0.3s ease;"
+        "  border-radius: 8px;"
+        "  background: rgba(0, 170, 255, 0.1);"
+        "  box-shadow: 0 0 20px rgba(0, 170, 255, 0.4), inset 0 0 15px rgba(0, 170, 255, 0.2);"
+        "  transition: box-shadow 0.3s ease, border-color 0.3s ease, background 0.3s ease;"
         "}"
         
-        /* ========== Terminal (Kitty-style) ========== */
+        /* ========== Terminal (Modern Dark) ========== */
         
-        /* Terminal - pure black background, white text */
+        /* Terminal - slightly warm black */
         "textview, text {"
-        "  background: #000000;"
-        "  color: #ffffff;"
+        "  background: rgba(20, 20, 25, 1.0);"
+        "  color: #d0d0d0;"
         "  font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', 'Ubuntu Mono', Menlo, monospace;"
         "  font-size: 13px;"
-        "  caret-color: #ffffff;"
+        "  caret-color: #00ff88;"
         "}"
         
         /* Cursor blink animation */
