@@ -206,7 +206,7 @@ on_vte_click_pressed(GtkGestureClick *gesture, guint n_press, gdouble x, gdouble
 
     /* Create a popover menu with Copy, Paste, Select All */
     GtkWidget *popover = gtk_popover_new();
-    gtk_popover_set_pointing_to(GTK_POPOVER(popover), &(GdkRectangle){(int)x, (int)y, 1, 1});
+    gtk_widget_set_parent(popover, term->terminal);
     
     /* Create a box for menu items */
     GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
@@ -234,7 +234,11 @@ on_vte_click_pressed(GtkGestureClick *gesture, guint n_press, gdouble x, gdouble
     g_signal_connect(select_all_btn, "clicked", G_CALLBACK(on_menu_select_all), term);
     gtk_box_append(GTK_BOX(box), select_all_btn);
     
-    /* Show the popover at click position */
+    /* Set position relative to click point */
+    GdkRectangle rect = {(int)x, (int)y, 0, 0};
+    gtk_popover_set_pointing_to(GTK_POPOVER(popover), &rect);
+    
+    /* Show the popover */
     gtk_popover_popup(GTK_POPOVER(popover));
 }
 
