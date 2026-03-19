@@ -30,89 +30,66 @@
 #include "focus_commands.h"
 #include "session_persistence.h"
 #include "vte_terminal.h"
+#include "app_state.h"
 
 #define MAX_WORKSPACES 32
 
-/* Workspace data structure */
-typedef struct {
-    guint id;
-    gchar *name;
-    gchar *cwd;
-    gchar *git_branch;
-    gchar *worktree_path;       /* Git worktree path if isolated */
-    guint notification_count;
-    gboolean is_active;
-    gboolean has_notification_ring;  /* Visual ring indicator for pending notifications */
-    int master_fd;
-    pid_t child_pid;
-} WorkspaceData;
-
-/* Notification ring colors */
-#define NOTIFICATION_RING_COLOR "#3498db"  /* Blue */
-
-/* Maximum pending notifications to track */
-#define MAX_PENDING_NOTIFICATIONS 64
-
-/* Pending notification structure (VAL-NOTIF-003, VAL-NOTIF-004) */
-typedef struct {
-    guint id;                      /* Unique notification ID */
-    guint workspace_id;            /* Source workspace ID */
-    gchar *title;                  /* Notification title */
-    gchar *body;                   /* Notification body */
-    gchar *timestamp;              /* When notification was received */
-    gboolean is_read;              /* Whether notification has been seen */
-} PendingNotification;
-
-/* Browser split orientation */
-typedef enum {
-    BROWSER_SPLIT_NONE = 0,
-    BROWSER_SPLIT_HORIZONTAL,  /* Browser and terminal side by side */
-    BROWSER_SPLIT_VERTICAL     /* Browser below terminal */
-} BrowserSplitOrientation;
-
-/* Application state */
-typedef struct {
+/* Application state - central shared state structure */
+struct _AppState {
+    /* GTK Application */
     GtkApplication *app;
+    
+    /* Main window */
+    GtkWidget *window;
+    
+    /* Sidebar */
     GtkWidget *sidebar;
     GtkWidget *sidebar_box;
-    GtkWidget *sidebar_container_box;  /* Container box for sidebar */
-    gboolean sidebar_visible;  /* Whether sidebar is visible */
+    GtkWidget *sidebar_container_box;
+    gboolean sidebar_visible;
+    GtkWidget *sidebar_paned;
+    
+    /* Content area */
     GtkWidget *main_container;
-    GtkWidget *sidebar_paned;  /* GtkPaned for resizable sidebar */
-    GtkWidget *window;
+    GtkWidget *content_area;
+    GtkWidget *terminal_container;
+    GtkWidget *terminal_area;
+    VteTerminalData *terminal_data;
     GtkWidget *terminal_view;
-    GtkWidget *terminal_container;  /* Container with notification ring */
-    VteTerminalData *terminal_data;    /* VTE terminal data */
-    GtkWidget *notification_panel;  /* Notification panel widget */
+    
+    /* Workspaces */
     WorkspaceData workspaces[MAX_WORKSPACES];
     guint workspace_count;
     guint active_workspace_id;
     guint next_workspace_id;
-    guint drag_source_index;  /* Track which workspace is being dragged for reordering */
-    CmuxNotificationManager *notification_manager;  /* D-Bus notification manager */
-    gboolean focus_mode;  /* Focus mode - hides sidebar and browser for distraction-free coding */
-    gboolean sidebar_visible_before_focus;  /* Store sidebar state before focus mode */
-    gboolean browser_visible_before_focus;  /* Store browser state before focus mode */
-    /* Notification tracking (VAL-NOTIF-003, VAL-NOTIF-004) */
+    guint drag_source_index;
+    
+    /* Focus mode */
+    gboolean focus_mode;
+    gboolean sidebar_visible_before_focus;
+    gboolean browser_visible_before_focus;
+    
+    /* Notifications */
+    GtkWidget *notification_panel;
     PendingNotification pending_notifications[MAX_PENDING_NOTIFICATIONS];
     guint pending_notification_count;
     guint next_notification_id;
-    /* Browser integration (VAL-BROWSER-001, VAL-BROWSER-002, VAL-BROWSER-003, VAL-BROWSER-005) */
+    CmuxNotificationManager *notification_manager;
+    
+    /* Browser */
+    gboolean browser_visible;
+    GtkWidget *split_paned;
+    GtkWidget *browser_container;
+    GtkWidget *browser_tab_bar;
+    GtkWidget *browser_tab_content;
     BrowserManager *browser_manager;
     BrowserInstance *browser_instance;
-    GtkWidget *browser_container;    /* Box holding browser widget */
-    GtkWidget *browser_tab_bar;     /* Tab bar for browser tabs */
-    GtkWidget *browser_tab_content;  /* Content area for active tab */
-    GtkWidget *content_area;         /* Content area for terminal/browser */
-    gboolean browser_visible;
-    /* Browser split support (VAL-BROWSER-002) */
-    GtkWidget *split_paned;          /* GtkPaned widget for browser split */
-    GtkWidget *terminal_area;        /* Terminal area (first child of paned) */
-    BrowserSplitOrientation split_orientation;  /* Current split orientation */
-    /* IPC socket server (VAL-API-001) */
+    BrowserSplitOrientation split_orientation;
+    
+    /* IPC */
     CmuxSocketServer *socket_server;
-    gboolean headless_mode;  /* Run without GUI */
-} AppState;
+    gboolean headless_mode;
+};
 
 /* Forward declarations for notification functions */
 static void add_notification(AppState *state, guint workspace_id, const gchar *title, const gchar *body);
