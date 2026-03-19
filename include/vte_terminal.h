@@ -432,6 +432,41 @@ vte_terminal_set_cwd_callback(VteTerminalData *term,
     }
 }
 
+/* Update cwd from OSC 7 termprop - call periodically or on cwd change signal */
+gboolean
+vte_terminal_update_cwd(VteTerminalData *term)
+{
+    if (!term || !term->terminal) return FALSE;
+    
+    VteTerminal *vte = VTE_TERMINAL(term->terminal);
+    
+    /* Get cwd URI from VTE termprop (set by OSC 7) */
+    GUri *uri = vte_terminal_ref_termprop_uri_by_id(vte, VTE_PROPERTY_ID_CURRENT_DIRECTORY_URI);
+    if (uri) {
+        const char *path = g_uri_get_path(uri);
+        if (path && path[0]) {
+            /* Decode percent-encoded characters */
+            char *decoded = g_uri_decode_string(path);
+            
+            /* Update stored cwd */
+            g_free(term->working_directory);
+            term->working_directory = g_strdup(decoded);
+            
+            /* Call callback if set */
+            if (term->cwd_callback) {
+                term->cwd_callback(decoded, term->cwd_data);
+            }
+            
+            g_free(decoded);
+            g_uri_unref(uri);
+            return TRUE;
+        }
+        g_uri_unref(uri);
+    }
+    
+    return FALSE;
+}
+
 /* Destroy terminal */
 void
 vte_terminal_free(VteTerminalData *term)

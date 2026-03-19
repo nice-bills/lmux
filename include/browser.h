@@ -46,6 +46,11 @@ typedef struct {
     GtkWidget *stop_button;
     GtkWidget *progress_bar;
     GtkWidget *devtools_button;
+    /* DOM extraction state */
+    gchar *pending_dom_result;
+    GMutex dom_mutex;
+    GCond dom_cond;
+    gboolean dom_pending;
 } BrowserInstance;
 
 /* Browser manager - handles all browser instances and tabs */

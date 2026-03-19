@@ -235,6 +235,12 @@ cmux_browser_create(BrowserManager *manager)
     
     gtk_widget_set_visible(instance->container, TRUE);
     
+    /* Initialize DOM extraction sync primitives */
+    g_mutex_init(&instance->dom_mutex);
+    g_cond_init(&instance->dom_cond);
+    instance->dom_pending = FALSE;
+    instance->pending_dom_result = NULL;
+    
     g_print("Browser instance created: ID=%u\n", instance->id);
     return instance;
 }
@@ -282,6 +288,11 @@ cmux_browser_destroy(BrowserInstance *instance)
     instance->devtools_button = NULL;
     instance->devtools_visible = FALSE;
     instance->is_loading = FALSE;
+    
+    /* Cleanup DOM extraction sync primitives */
+    g_mutex_clear(&instance->dom_mutex);
+    g_cond_clear(&instance->dom_cond);
+    g_free(instance->pending_dom_result);
 }
 
 /**
@@ -932,8 +943,68 @@ cmux_browser_get_tabs(BrowserManager *manager)
     return manager ? manager->tabs : NULL;
 }
 
-/* Simplified DOM extraction - returns basic page info */
-/* Full DOM extraction requires WebKitGTK 6.0 async JS API */
+/* JavaScript to extract DOM structure */
+static const gchar *DOM_SCRIPT = 
+    "(function() {"
+    "  var result = {"
+    "    title: document.title,"
+    "    url: window.location.href,"
+    "    headings: [],"
+    "    links: [],"
+    "    inputs: [],"
+    "    bodyText: (document.body ? document.body.innerText.substring(0, 2000) : '')"
+    "  };"
+    "  document.querySelectorAll('h1,h2,h3,h4,h5,h6').forEach(function(h) {"
+    "    if (result.headings.length < 20) result.headings.push(h.innerText.substring(0, 100));"
+    "  });"
+    "  document.querySelectorAll('a[href]').forEach(function(a) {"
+    "    if (result.links.length < 30) result.links.push({text: a.innerText.substring(0,50), href: a.href});"
+    "  });"
+    "  document.querySelectorAll('input,textarea,select').forEach(function(el) {"
+    "    if (result.inputs.length < 20) result.inputs.push({"
+    "      type: el.type || el.tagName,"
+    "      name: el.name || el.id || '',"
+    "      placeholder: el.placeholder || ''"
+    "    });"
+    "  });"
+    "  return JSON.stringify(result);"
+    "})()";
+
+/* Callback for JavaScript execution - extracts DOM */
+static void
+on_dom_js_finished(WebKitWebView *web_view, GAsyncResult *result, gpointer user_data)
+{
+    BrowserInstance *instance = user_data;
+    if (!instance) return;
+    
+    g_mutex_lock(&instance->dom_mutex);
+    
+    GError *error = NULL;
+    WebKitJavascriptResult *js_result = webkit_web_view_run_javascript_finish(web_view, result, &error);
+    
+    if (js_result) {
+        JSCValue *value = webkit_javascript_result_get_js_value(js_result);
+        if (JSC_IS_VALUE(value)) {
+            gchar *json_str = jsc_value_to_json(value, 0);
+            if (json_str) {
+                /* Parse and reformat for cleaner output */
+                instance->pending_dom_result = g_strdup(json_str);
+                g_free(json_str);
+            }
+        }
+        webkit_javascript_result_unref(js_result);
+    } else if (error) {
+        g_printerr("DOM JS error: %s\n", error->message);
+        g_error_free(error);
+        instance->pending_dom_result = g_strdup_printf("{\"error\":\"%s\"}", error->message);
+    }
+    
+    instance->dom_pending = FALSE;
+    g_cond_signal(&instance->dom_cond);
+    g_mutex_unlock(&instance->dom_mutex);
+}
+
+/* Extract DOM from browser using JavaScript injection */
 gchar*
 cmux_browser_get_dom(BrowserInstance *instance)
 {
@@ -941,16 +1012,38 @@ cmux_browser_get_dom(BrowserInstance *instance)
         return g_strdup("{\"error\":\"Browser not initialized\"}");
     }
     
-    /* Get page info - web_view is a GtkWidget wrapping WebKitWebView */
-    const gchar *title = webkit_web_view_get_title(WEBKIT_WEB_VIEW(instance->web_view));
-    const gchar *uri = webkit_web_view_get_uri(WEBKIT_WEB_VIEW(instance->web_view));
+    g_mutex_lock(&instance->dom_mutex);
     
-    /* Build simplified DOM response */
-    GString *dom = g_string_new("{");
-    g_string_append_printf(dom, "\"title\":\"%s\",", title ? title : "");
-    g_string_append_printf(dom, "\"url\":\"%s\",", uri ? uri : "");
-    g_string_append(dom, "\"message\":\"Use browser DevTools for full DOM inspection\"");
-    g_string_append(dom, "}");
+    /* Set up for async result */
+    instance->dom_pending = TRUE;
+    g_free(instance->pending_dom_result);
+    instance->pending_dom_result = NULL;
     
-    return g_string_free(dom, FALSE);
+    /* Execute JavaScript to extract DOM */
+    webkit_web_view_run_javascript(
+        WEBKIT_WEB_VIEW(instance->web_view),
+        DOM_SCRIPT,
+        NULL,
+        on_dom_js_finished,
+        instance
+    );
+    
+    /* Wait for result with timeout */
+    gint64 end_time = g_get_monotonic_time() + G_TIME_SPAN_SECOND; /* 1 second timeout */
+    while (instance->dom_pending) {
+        if (!g_cond_wait_until(&instance->dom_cond, &instance->dom_mutex, end_time)) {
+            /* Timeout */
+            instance->dom_pending = FALSE;
+            g_mutex_unlock(&instance->dom_mutex);
+            return g_strdup("{\"error\":\"DOM extraction timed out\"}");
+        }
+    }
+    
+    gchar *result = instance->pending_dom_result ? 
+        g_strdup(instance->pending_dom_result) : 
+        g_strdup("{\"error\":\"No DOM result\"}");
+    
+    g_mutex_unlock(&instance->dom_mutex);
+    
+    return result;
 }
