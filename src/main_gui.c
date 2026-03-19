@@ -32,6 +32,8 @@
 #include "vte_terminal.h"
 #include "app_state.h"
 #include "settings.h"
+#include "layer_shell.h"
+#include <gtk4-layer-shell.h>
 
 #define MAX_WORKSPACES 32
 
@@ -42,6 +44,7 @@ struct _AppState {
     
     /* Settings */
     LmuxSettings *settings;
+    gboolean layer_shell_active;
     
     /* Windowed mode (Niri-native) */
     gboolean windowed_mode;
@@ -3028,6 +3031,29 @@ main(int argc, char **argv)
     /* Initialize settings */
     state->settings = lmux_settings_new();
     lmux_settings_load(state->settings);
+    state->layer_shell_active = FALSE;
+    
+    /* Try to initialize layer shell for Wayland panel */
+    if (state->settings->sidebar_visible && layer_shell_is_available()) {
+        LayerShellConfig config = {
+            .enabled = TRUE,
+            .exclusive_zone = TRUE,
+            .margin_top = 0,
+            .margin_bottom = 0,
+            .margin_left = 0,
+            .margin_right = 0,
+            .autohide = FALSE,
+        };
+        if (layer_shell_init(GTK_WINDOW(state->window), &config)) {
+            state->layer_shell_active = TRUE;
+            gtk_layer_set_layer(GTK_WINDOW(state->window), GTK_LAYER_SHELL_LAYER_TOP);
+            gtk_layer_set_anchor(GTK_WINDOW(state->window), GTK_LAYER_SHELL_EDGE_LEFT, TRUE);
+            gtk_layer_set_anchor(GTK_WINDOW(state->window), GTK_LAYER_SHELL_EDGE_RIGHT, FALSE);
+            gtk_layer_set_anchor(GTK_WINDOW(state->window), GTK_LAYER_SHELL_EDGE_TOP, FALSE);
+            gtk_layer_set_anchor(GTK_WINDOW(state->window), GTK_LAYER_SHELL_EDGE_BOTTOM, FALSE);
+            gtk_layer_auto_exclusive_zone_enable(GTK_WINDOW(state->window));
+        }
+    }
     
     /* Initialize state */
     state->next_workspace_id = 1;

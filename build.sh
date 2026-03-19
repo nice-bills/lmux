@@ -46,9 +46,20 @@ else
     echo "Ghostty not available - using VTE fallback"
 fi
 
+# Check for optional layer-shell (Wayland panel support)
+LAYER_CFLAGS=""
+LAYER_LIBS=""
+if pkg-config --exists gtk4-layer-shell-0 2>/dev/null; then
+    echo "Using gtk4-layer-shell for Wayland panel integration"
+    LAYER_CFLAGS="$(pkg-config --cflags gtk4-layer-shell-0 2>/dev/null)"
+    LAYER_LIBS="$(pkg-config --libs gtk4-layer-shell-0 2>/dev/null)"
+else
+    echo "Layer shell not available - GTK window mode only"
+fi
+
 # Build flags
-CFLAGS="$(pkg-config --cflags vte-2.91-gtk4 gtk4 gio-2.0 webkitgtk-6.0 2>/dev/null) -Iinclude $GHOSTTY_CFLAGS"
-LIBS="$(pkg-config --libs vte-2.91-gtk4 gtk4 gio-2.0 webkitgtk-6.0 2>/dev/null) -lutil -lpthread $GHOSTTY_LIBS"
+CFLAGS="$(pkg-config --cflags vte-2.91-gtk4 gtk4 gio-2.0 webkitgtk-6.0 2>/dev/null) -Iinclude $GHOSTTY_CFLAGS $LAYER_CFLAGS"
+LIBS="$(pkg-config --libs vte-2.91-gtk4 gtk4 gio-2.0 webkitgtk-6.0 2>/dev/null) -lutil -lpthread $GHOSTTY_LIBS $LAYER_LIBS"
 
 # ============================================================
 # Build lmuxd (daemon)
@@ -75,7 +86,7 @@ echo "  Built: ./lmuxd"
 # ============================================================
 # Build lmux (GUI client)
 # ============================================================
-SOURCES="src/main_gui.c src/vte_terminal.h src/browser.c src/notification.c src/workspace_commands.c src/terminal_commands.c src/focus_commands.c src/session_persistence.c src/lmux_css.c src/shortcuts_help.c src/workspace_dialogs.c src/window_decorations.c src/socket_server.c src/settings.c"
+SOURCES="src/main_gui.c src/vte_terminal.h src/browser.c src/notification.c src/workspace_commands.c src/terminal_commands.c src/focus_commands.c src/session_persistence.c src/lmux_css.c src/shortcuts_help.c src/workspace_dialogs.c src/window_decorations.c src/socket_server.c src/settings.c src/layer_shell.c"
 
 # Add ghostty terminal if available
 if [ -n "$GHOSTTY_CFLAGS" ]; then
