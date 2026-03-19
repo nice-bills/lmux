@@ -3,6 +3,7 @@
 # build.sh - Build script for lmux and lmuxd
 #
 # Requires: VTE (libvte-2.91-gtk4), GTK4, WebKitGTK 6.0
+# Optional: libghostty-vt for GPU-accelerated rendering
 #
 
 set -e
@@ -34,9 +35,20 @@ fi
 echo "Using system VTE GTK4"
 echo "Using WebKitGTK 6.0"
 
+# Check for optional ghostty
+GHOSTTY_CFLAGS=""
+GHOSTTY_LIBS=""
+if pkg-config --exists libghostty-vt 2>/dev/null; then
+    echo "Using libghostty-vt for GPU-accelerated rendering"
+    GHOSTTY_CFLAGS="$(pkg-config --cflags libghostty-vt 2>/dev/null)"
+    GHOSTTY_LIBS="$(pkg-config --libs libghostty-vt 2>/dev/null)"
+else
+    echo "Ghostty not available - using VTE fallback"
+fi
+
 # Build flags
-CFLAGS="$(pkg-config --cflags vte-2.91-gtk4 gtk4 gio-2.0 webkitgtk-6.0 2>/dev/null) -Iinclude"
-LIBS="$(pkg-config --libs vte-2.91-gtk4 gtk4 gio-2.0 webkitgtk-6.0 2>/dev/null) -lutil -lpthread"
+CFLAGS="$(pkg-config --cflags vte-2.91-gtk4 gtk4 gio-2.0 webkitgtk-6.0 2>/dev/null) -Iinclude $GHOSTTY_CFLAGS"
+LIBS="$(pkg-config --libs vte-2.91-gtk4 gtk4 gio-2.0 webkitgtk-6.0 2>/dev/null) -lutil -lpthread $GHOSTTY_LIBS"
 
 # ============================================================
 # Build lmuxd (daemon)
@@ -64,6 +76,11 @@ echo "  Built: ./lmuxd"
 # Build lmux (GUI client)
 # ============================================================
 SOURCES="src/main_gui.c src/vte_terminal.h src/browser.c src/notification.c src/workspace_commands.c src/terminal_commands.c src/focus_commands.c src/session_persistence.c src/lmux_css.c src/shortcuts_help.c src/workspace_dialogs.c src/window_decorations.c src/socket_server.c"
+
+# Add ghostty terminal if available
+if [ -n "$GHOSTTY_CFLAGS" ]; then
+    SOURCES="$SOURCES src/ghostty_terminal.c"
+fi
 
 echo ""
 echo "Building lmux (GUI)..."
