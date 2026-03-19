@@ -3033,6 +3033,11 @@ main(int argc, char **argv)
     lmux_settings_load(state->settings);
     state->layer_shell_active = FALSE;
     
+    /* Apply settings to state */
+    state->windowed_mode = state->settings->windowed_mode;
+    state->sidebar_visible = state->settings->sidebar_visible;
+    state->focus_mode = state->settings->focus_mode_enabled;
+    
     /* Try to initialize layer shell for Wayland panel */
     if (state->settings->sidebar_visible && layer_shell_is_available()) {
         LayerShellConfig config = {

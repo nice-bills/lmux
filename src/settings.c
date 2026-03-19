@@ -147,7 +147,8 @@ lmux_settings_toggle_systemd_autostart(LmuxSettings *settings, gboolean enable)
             "\n"
             "[Install]\n"
             "WantedBy=default.target\n",
-            g_get_current_dir());
+            "/usr/local/bin");
+        /* Try ~/bin first, fallback to /usr/local/bin */
         
         g_file_set_contents(service_dest, service_content, -1, NULL);
         g_free(service_content);
