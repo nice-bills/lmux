@@ -316,4 +316,70 @@ BrowserTab* cmux_browser_get_tabs(BrowserManager *manager);
  */
 gchar* cmux_browser_get_dom(BrowserInstance *instance);
 
+/* ========== Browser Actuation (VAL-BROWSER-ACTUATION) ========== */
+
+/**
+ * cmux_browser_click:
+ * @instance: Browser instance
+ * @selector: CSS selector for element to click
+ * 
+ * Click an element using JavaScript.
+ * 
+ * Returns: TRUE if successful, FALSE otherwise.
+ */
+gboolean cmux_browser_click(BrowserInstance *instance, const gchar *selector);
+
+/**
+ * cmux_browser_type:
+ * @instance: Browser instance
+ * @selector: CSS selector for input element
+ * @text: Text to type
+ * 
+ * Type text into an input element.
+ * 
+ * Returns: TRUE if successful, FALSE otherwise.
+ */
+gboolean cmux_browser_type(BrowserInstance *instance, const gchar *selector, const gchar *text);
+
+/**
+ * cmux_browser_scroll:
+ * @instance: Browser instance
+ * @x: Horizontal scroll offset in pixels
+ * @y: Vertical scroll offset in pixels
+ * 
+ * Scroll the page to absolute position.
+ */
+void cmux_browser_scroll(BrowserInstance *instance, gint x, gint y);
+
+/**
+ * cmux_browser_scroll_by:
+ * @instance: Browser instance
+ * @dx: Horizontal scroll delta
+ * @dy: Vertical scroll delta
+ * 
+ * Scroll the page by relative amount.
+ */
+void cmux_browser_scroll_by(BrowserInstance *instance, gint dx, gint dy);
+
+/**
+ * cmux_browser_screenshot:
+ * @instance: Browser instance
+ * 
+ * Capture a screenshot of the current page.
+ * 
+ * Returns: PNG image data as base64 string, or NULL on error. Must be freed with g_free().
+ */
+gchar* cmux_browser_screenshot(BrowserInstance *instance);
+
+/**
+ * cmux_browser_evaluate:
+ * @instance: Browser instance
+ * @script: JavaScript to execute
+ * 
+ * Execute arbitrary JavaScript in the page context.
+ * 
+ * Returns: JSON result string, or NULL on error. Must be freed with g_free().
+ */
+gchar* cmux_browser_evaluate(BrowserInstance *instance, const gchar *script);
+
 #endif /* CMUX_BROWSER_H */

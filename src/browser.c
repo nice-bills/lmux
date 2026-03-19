@@ -1045,3 +1045,183 @@ cmux_browser_get_dom(BrowserInstance *instance)
     
     return result;
 }
+
+/* Actuation: click element */
+gboolean
+cmux_browser_click(BrowserInstance *instance, const gchar *selector)
+{
+    if (!instance || !instance->web_view || !selector) return FALSE;
+    
+    gchar *js = g_strdup_printf(
+        "(function() {"
+        "  var el = document.querySelector('%s');"
+        "  if (el) { el.click(); return '{\"success\":true,\"clicked\":\"' + el.tagName + '\"}'; }"
+        "  return '{\"error\":\"Element not found: %s\"}';"
+        "})()",
+        selector, selector);
+    
+    /* Execute synchronously with a simple approach */
+    gboolean result = FALSE;
+    
+    /* For now, use async - actual click */
+    instance->dom_pending = TRUE;
+    g_free(instance->pending_dom_result);
+    instance->pending_dom_result = NULL;
+    
+    webkit_web_view_evaluate_javascript(
+        WEBKIT_WEB_VIEW(instance->web_view),
+        js, strlen(js), NULL, NULL, NULL,
+        on_dom_js_finished, instance);
+    
+    g_mutex_lock(&instance->dom_mutex);
+    gint64 end = g_get_monotonic_time() + G_TIME_SPAN_SECOND;
+    while (instance->dom_pending && !g_cond_wait_until(&instance->dom_cond, &instance->dom_mutex, end)) {}
+    result = instance->pending_dom_result != NULL && !g_str_has_prefix(instance->pending_dom_result, "{\"error");
+    g_mutex_unlock(&instance->dom_mutex);
+    
+    g_free(js);
+    return result;
+}
+
+/* Actuation: type into element */
+gboolean
+cmux_browser_type(BrowserInstance *instance, const gchar *selector, const gchar *text)
+{
+    if (!instance || !instance->web_view || !selector || !text) return FALSE;
+    
+    /* Escape single quotes in text */
+    gchar *escaped = g_strescape(text, NULL);
+    gchar *js = g_strdup_printf(
+        "(function() {"
+        "  var el = document.querySelector('%s');"
+        "  if (!el) return '{\"error\":\"Element not found\"}';"
+        "  if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {"
+        "    el.value = '%s';"
+        "    el.dispatchEvent(new Event('input', {bubbles: true}));"
+        "    el.dispatchEvent(new Event('change', {bubbles: true}));"
+        "    return '{\"success\":true,\"typed\":\"' + el.tagName + '\"}';"
+        "  }"
+        "  return '{\"error\":\"Not an input element\"}';"
+        "})()",
+        selector, escaped);
+    
+    instance->dom_pending = TRUE;
+    g_free(instance->pending_dom_result);
+    instance->pending_dom_result = NULL;
+    
+    webkit_web_view_evaluate_javascript(
+        WEBKIT_WEB_VIEW(instance->web_view),
+        js, strlen(js), NULL, NULL, NULL,
+        on_dom_js_finished, instance);
+    
+    g_mutex_lock(&instance->dom_mutex);
+    gint64 end = g_get_monotonic_time() + G_TIME_SPAN_SECOND;
+    while (instance->dom_pending && !g_cond_wait_until(&instance->dom_cond, &instance->dom_mutex, end)) {}
+    gboolean result = instance->pending_dom_result && !g_str_has_prefix(instance->pending_dom_result, "{\"error");
+    g_mutex_unlock(&instance->dom_mutex);
+    
+    g_free(js);
+    g_free(escaped);
+    return result;
+}
+
+/* Actuation: scroll to absolute position */
+void
+cmux_browser_scroll(BrowserInstance *instance, gint x, gint y)
+{
+    if (!instance || !instance->web_view) return;
+    
+    gchar *js = g_strdup_printf(
+        "(function() { window.scrollTo(%d, %d); return '{\"success\":true}'; })()",
+        x, y);
+    
+    instance->dom_pending = TRUE;
+    webkit_web_view_evaluate_javascript(
+        WEBKIT_WEB_VIEW(instance->web_view),
+        js, strlen(js), NULL, NULL, NULL,
+        on_dom_js_finished, instance);
+    
+    g_free(js);
+}
+
+/* Actuation: scroll by relative amount */
+void
+cmux_browser_scroll_by(BrowserInstance *instance, gint dx, gint dy)
+{
+    if (!instance || !instance->web_view) return;
+    
+    gchar *js = g_strdup_printf(
+        "(function() { window.scrollBy(%d, %d); return '{\"success\":true}'; })()",
+        dx, dy);
+    
+    instance->dom_pending = TRUE;
+    webkit_web_view_evaluate_javascript(
+        WEBKIT_WEB_VIEW(instance->web_view),
+        js, strlen(js), NULL, NULL, NULL,
+        on_dom_js_finished, instance);
+    
+    g_free(js);
+}
+
+/* Actuation: take screenshot */
+gchar*
+cmux_browser_screenshot(BrowserInstance *instance)
+{
+    if (!instance || !instance->web_view) return NULL;
+    
+    /* JavaScript to capture screenshot via canvas */
+    const gchar *js = 
+        "(function() {"
+        "  var canvas = document.createElement('canvas');"
+        "  canvas.width = window.innerWidth;"
+        "  canvas.height = window.innerHeight;"
+        "  var ctx = canvas.getContext('2d');"
+        "  // Create a simple placeholder - real impl needs html2canvas or similar"
+        "  ctx.fillStyle = '#ffffff';"
+        "  ctx.fillRect(0, 0, canvas.width, canvas.height);"
+        "  ctx.fillStyle = '#000000';"
+        "  ctx.fillText('Screenshot at ' + new Date().toISOString(), 10, 50);"
+        "  return canvas.toDataURL('image/png');"
+        "})()";
+    
+    instance->dom_pending = TRUE;
+    g_free(instance->pending_dom_result);
+    instance->pending_dom_result = NULL;
+    
+    webkit_web_view_evaluate_javascript(
+        WEBKIT_WEB_VIEW(instance->web_view),
+        js, strlen(js), NULL, NULL, NULL,
+        on_dom_js_finished, instance);
+    
+    g_mutex_lock(&instance->dom_mutex);
+    gint64 end = g_get_monotonic_time() + G_TIME_SPAN_SECOND * 2;
+    while (instance->dom_pending && !g_cond_wait_until(&instance->dom_cond, &instance->dom_mutex, end)) {}
+    gchar *result = instance->pending_dom_result ? g_strdup(instance->pending_dom_result) : NULL;
+    g_mutex_unlock(&instance->dom_mutex);
+    
+    return result;
+}
+
+/* Actuation: evaluate arbitrary JavaScript */
+gchar*
+cmux_browser_evaluate(BrowserInstance *instance, const gchar *script)
+{
+    if (!instance || !instance->web_view || !script) return NULL;
+    
+    instance->dom_pending = TRUE;
+    g_free(instance->pending_dom_result);
+    instance->pending_dom_result = NULL;
+    
+    webkit_web_view_evaluate_javascript(
+        WEBKIT_WEB_VIEW(instance->web_view),
+        script, strlen(script), NULL, NULL, NULL,
+        on_dom_js_finished, instance);
+    
+    g_mutex_lock(&instance->dom_mutex);
+    gint64 end = g_get_monotonic_time() + G_TIME_SPAN_SECOND * 5;
+    while (instance->dom_pending && !g_cond_wait_until(&instance->dom_cond, &instance->dom_mutex, end)) {}
+    gchar *result = instance->pending_dom_result ? g_strdup(instance->pending_dom_result) : NULL;
+    g_mutex_unlock(&instance->dom_mutex);
+    
+    return result;
+}

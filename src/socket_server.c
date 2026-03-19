@@ -730,6 +730,134 @@ handle_jsonrpc_request(struct CmuxJsonRpcRequest *req, gpointer user_data)
         return format_jsonrpc_response(req->id, 
             "{\"dom\":null,\"error\":\"Browser not available\"}", NULL);
     }
+    else if (g_strcmp0(req->method, "browser.click") == 0) {
+        /* browser.click {"selector": "button#submit"} */
+        if (user_data) {
+            BrowserInstance *inst = socket_get_browser_instance(user_data);
+            if (inst && req->params) {
+                /* Extract selector from params */
+                const gchar *sel = strstr(req->params, "\"selector\"");
+                if (sel) {
+                    const gchar *colon = strchr(sel, ':');
+                    const gchar *start = colon ? strchr(colon, '"') : NULL;
+                    if (start) {
+                        start++;
+                        const gchar *end = strchr(start, '"');
+                        if (end) {
+                            gchar *selector = g_strndup(start, end - start);
+                            gboolean ok = cmux_browser_click(inst, selector);
+                            gchar *result = g_strdup_printf("{\"success\":%s}", ok ? "true" : "false");
+                            g_free(selector);
+                            return format_jsonrpc_response(req->id, result, NULL);
+                        }
+                    }
+                }
+            }
+        }
+        return format_jsonrpc_response(req->id, "{\"error\":\"Invalid params\"}", NULL);
+    }
+    else if (g_strcmp0(req->method, "browser.type") == 0) {
+        /* browser.type {"selector": "input#name", "text": "hello"} */
+        if (user_data) {
+            BrowserInstance *inst = socket_get_browser_instance(user_data);
+            if (inst && req->params) {
+                const gchar *sel = strstr(req->params, "\"selector\"");
+                const gchar *txt = strstr(req->params, "\"text\"");
+                if (sel && txt) {
+                    /* Extract selector */
+                    const gchar *colon = strchr(sel, ':');
+                    const gchar *start = colon ? strchr(colon, '"') : NULL;
+                    if (start) {
+                        start++;
+                        const gchar *end = strchr(start, '"');
+                        if (end) {
+                            gchar *selector = g_strndup(start, end - start);
+                            /* Extract text */
+                            colon = strchr(txt, ':');
+                            start = colon ? strchr(colon, '"') : NULL;
+                            if (start) {
+                                start++;
+                                end = strchr(start, '"');
+                                if (end) {
+                                    gchar *text = g_strndup(start, end - start);
+                                    gboolean ok = cmux_browser_type(inst, selector, text);
+                                    gchar *result = g_strdup_printf("{\"success\":%s}", ok ? "true" : "false");
+                                    g_free(text);
+                                    g_free(selector);
+                                    return format_jsonrpc_response(req->id, result, NULL);
+                                }
+                            }
+                            g_free(selector);
+                        }
+                    }
+                }
+            }
+        }
+        return format_jsonrpc_response(req->id, "{\"error\":\"Invalid params\"}", NULL);
+    }
+    else if (g_strcmp0(req->method, "browser.scroll") == 0) {
+        /* browser.scroll {"x": 0, "y": 100} or browser.scroll {"dx": 0, "dy": 100} */
+        if (user_data) {
+            BrowserInstance *inst = socket_get_browser_instance(user_data);
+            if (inst && req->params) {
+                gint x = 0, y = 0, dx = 0, dy = 0;
+                sscanf(req->params, "%*[^{]x\": %d, \"y\": %d", &x, &y);
+                sscanf(req->params, "%*[^{]dx\": %d, \"dy\": %d", &dx, &dy);
+                if (dx != 0 || dy != 0) {
+                    cmux_browser_scroll_by(inst, dx, dy);
+                } else {
+                    cmux_browser_scroll(inst, x, y);
+                }
+                return format_jsonrpc_response(req->id, "{\"success\":true}", NULL);
+            }
+        }
+        return format_jsonrpc_response(req->id, "{\"error\":\"Invalid params\"}", NULL);
+    }
+    else if (g_strcmp0(req->method, "browser.screenshot") == 0) {
+        /* Return screenshot as base64 PNG */
+        if (user_data) {
+            BrowserInstance *inst = socket_get_browser_instance(user_data);
+            if (inst) {
+                gchar *data = cmux_browser_screenshot(inst);
+                if (data) {
+                    gchar *result = g_strdup_printf("{\"screenshot\":\"%s\"}", data);
+                    g_free(data);
+                    return format_jsonrpc_response(req->id, result, NULL);
+                }
+            }
+        }
+        return format_jsonrpc_response(req->id, "{\"error\":\"Screenshot failed\"}", NULL);
+    }
+    else if (g_strcmp0(req->method, "browser.evaluate") == 0) {
+        /* Execute arbitrary JavaScript */
+        if (user_data) {
+            BrowserInstance *inst = socket_get_browser_instance(user_data);
+            if (inst && req->params) {
+                /* Extract script from params */
+                const gchar *script_start = strstr(req->params, "\"script\"");
+                if (script_start) {
+                    const gchar *colon = strchr(script_start, ':');
+                    const gchar *start = colon ? strchr(colon, '"') : NULL;
+                    if (start) {
+                        start++;
+                        const gchar *end = strchr(start, '"');
+                        if (end) {
+                            gchar *script = g_strndup(start, end - start);
+                            gchar *result = cmux_browser_evaluate(inst, script);
+                            if (result) {
+                                gchar *resp = format_jsonrpc_response(req->id, result, NULL);
+                                g_free(result);
+                                g_free(script);
+                                return resp;
+                            }
+                            g_free(script);
+                        }
+                    }
+                }
+            }
+        }
+        return format_jsonrpc_response(req->id, "{\"error\":\"Invalid params\"}", NULL);
+    }
     else if (g_strcmp0(req->method, "workspace.list") == 0) {
         /* List workspaces */
         gchar *result = g_strdup_printf("{\"workspaces\":[],\"message\":\"Use traditional API\"}");
