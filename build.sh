@@ -35,11 +35,11 @@ echo "Using system VTE GTK4"
 echo "Using WebKitGTK 6.0"
 
 # Build flags
-CFLAGS="$(pkg-config --cflags vte-2.91-gtk4 gtk4 gio-2.0 webkitgtk-6.0 2>/dev/null)"
+CFLAGS="$(pkg-config --cflags vte-2.91-gtk4 gtk4 gio-2.0 webkitgtk-6.0 2>/dev/null) -Iinclude"
 LIBS="$(pkg-config --libs vte-2.91-gtk4 gtk4 gio-2.0 webkitgtk-6.0 2>/dev/null) -lutil -lpthread"
 
 # Source files
-SOURCES="main_gui.c vte_terminal.h browser.c notification.c socket_server.c workspace_commands.c terminal_commands.c focus_commands.c session_persistence.c lmux_css.c shortcuts_help.c workspace_dialogs.c window_decorations.c"
+SOURCES="src/main_gui.c src/vte_terminal.h src/browser.c src/notification.c src/socket_server.c src/workspace_commands.c src/terminal_commands.c src/focus_commands.c src/session_persistence.c src/lmux_css.c src/shortcuts_help.c src/workspace_dialogs.c src/window_decorations.c"
 
 echo "Compiling lmux..."
 echo "  Sources: $SOURCES"
