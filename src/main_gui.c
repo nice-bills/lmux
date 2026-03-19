@@ -39,6 +39,10 @@ struct _AppState {
     /* GTK Application */
     GtkApplication *app;
     
+    /* Windowed mode (Niri-native) */
+    gboolean windowed_mode;
+    GPtrArray *workspace_windows;  /* Array of GtkWidget* - one per workspace */
+    
     /* Main window */
     GtkWidget *window;
     
@@ -588,9 +592,28 @@ add_workspace(AppState *state, guint id, const gchar *name, const gchar *cwd)
     state->workspaces[state->workspace_count] = *ws;
     state->workspace_count++;
     
-    /* Add sidebar item with index */
-    GtkWidget *item = create_sidebar_item(ws, state, idx);
-    gtk_box_append(GTK_BOX(state->sidebar_box), item);
+    /* In windowed mode, create a separate GTK window for this workspace */
+    if (state->windowed_mode) {
+        GtkWidget *win = gtk_application_window_new(state->app);
+        gtk_window_set_title(GTK_WINDOW(win), name);
+        gtk_window_set_default_size(GTK_WINDOW(win), 1200, 800);
+        
+        /* Create terminal container in window */
+        GtkWidget *container = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+        gtk_window_set_child(GTK_WINDOW(win), container);
+        
+        /* Store window and container */
+        g_ptr_array_add(state->workspace_windows, win);
+        gtk_widget_set_visible(win, ws->is_active);
+        
+        g_print("Windowed mode: Created window for workspace %s\n", name);
+    }
+    
+    /* Add sidebar item with index (only in non-windowed mode) */
+    if (!state->windowed_mode) {
+        GtkWidget *item = create_sidebar_item(ws, state, idx);
+        gtk_box_append(GTK_BOX(state->sidebar_box), item);
+    }
     
     g_print("Added workspace: %s (ID: %u, CWD: %s, Git: %s)\n", 
             name, id, cwd, ws->git_branch ? ws->git_branch : "none");
@@ -1718,9 +1741,28 @@ switch_to_workspace(void *state_ptr, guint workspace_id)
     AppState *state = (AppState *)state_ptr;
     state->active_workspace_id = workspace_id;
     
-    /* Update active state */
+    /* Find workspace index */
+    guint ws_idx = 0xFFFFFFFF;
     for (guint i = 0; i < state->workspace_count; i++) {
-        state->workspaces[i].is_active = (state->workspaces[i].id == workspace_id);
+        if (state->workspaces[i].id == workspace_id) {
+            ws_idx = i;
+            state->workspaces[i].is_active = TRUE;
+        } else {
+            state->workspaces[i].is_active = FALSE;
+        }
+    }
+    
+    /* In windowed mode, show/hide workspace windows */
+    if (state->windowed_mode && ws_idx < state->workspace_windows->len) {
+        /* Hide all windows first */
+        for (guint i = 0; i < state->workspace_windows->len; i++) {
+            GtkWidget *win = g_ptr_array_index(state->workspace_windows, i);
+            gtk_widget_set_visible(win, FALSE);
+        }
+        /* Show the active workspace window */
+        GtkWidget *win = g_ptr_array_index(state->workspace_windows, ws_idx);
+        gtk_widget_set_visible(win, TRUE);
+        gtk_window_present(GTK_WINDOW(win));
     }
     
     refresh_sidebar(state);
@@ -1740,6 +1782,23 @@ socket_get_browser_instance(void *app_state)
 static void
 close_workspace(AppState *state, guint workspace_id)
 {
+    guint ws_idx = 0xFFFFFFFF;
+    for (guint i = 0; i < state->workspace_count; i++) {
+        if (state->workspaces[i].id == workspace_id) {
+            ws_idx = i;
+            break;
+        }
+    }
+    
+    if (ws_idx == 0xFFFFFFFF) return;
+    
+    /* In windowed mode, close the workspace window */
+    if (state->windowed_mode && ws_idx < state->workspace_windows->len) {
+        GtkWidget *win = g_ptr_array_index(state->workspace_windows, ws_idx);
+        gtk_window_close(GTK_WINDOW(win));
+        g_ptr_array_remove_index(state->workspace_windows, ws_idx);
+    }
+    
     for (guint i = 0; i < state->workspace_count; i++) {
         if (state->workspaces[i].id == workspace_id) {
             /* Clean up */
@@ -2874,8 +2933,9 @@ main(int argc, char **argv)
     AppState *state = g_malloc0(sizeof(AppState));
     int status;
     
-    /* Check for headless mode BEFORE gtk_application_new */
+    /* Check for headless mode and windowed mode BEFORE gtk_application_new */
     gboolean headless = FALSE;
+    gboolean windowed = FALSE;
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--headless") == 0) {
             headless = TRUE;
@@ -2885,8 +2945,21 @@ main(int argc, char **argv)
             }
             argc--;
             i--;
+        } else if (strcmp(argv[i], "--windowed") == 0 || strcmp(argv[i], "-w") == 0) {
+            windowed = TRUE;
+            g_print("Running in windowed mode (Niri-native)\n");
+            /* Remove --windowed from argv */
+            for (int j = i; j < argc - 1; j++) {
+                argv[j] = argv[j + 1];
+            }
+            argc--;
+            i--;
         }
     }
+    
+    /* Initialize windowed mode arrays */
+    state->windowed_mode = windowed;
+    state->workspace_windows = g_ptr_array_new();
     
     /* Initialize GTK */
     if (!headless && !gtk_init_check()) {
