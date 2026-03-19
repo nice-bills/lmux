@@ -35,6 +35,7 @@ typedef struct {
     gchar *name;
     gchar *cwd;
     gchar *git_branch;
+    gchar *worktree_path;       /* Git worktree path if isolated */
     guint notification_count;
     gboolean is_active;
     gboolean has_notification_ring;  /* Visual ring indicator for pending notifications */
@@ -129,6 +130,8 @@ static void show_shortcuts_help(AppState *state);
 static void rename_active_workspace(AppState *state);
 static void on_terminal_attention(gpointer user_data);
 static void set_workspace_notification_ring(AppState *state, guint workspace_id, gboolean has_ring);
+static void prompt_new_workspace_with_worktree(AppState *state);
+static guint create_new_workspace_with_worktree(AppState *state, const gchar *task_name);
 /* Get current working directory */
 static gchar*
 get_current_cwd(void)
@@ -190,6 +193,7 @@ create_workspace(guint id, const gchar *name, const gchar *cwd)
     ws->name = g_strdup(name);
     ws->cwd = g_strdup(cwd);
     ws->git_branch = detect_git_branch(cwd);
+    ws->worktree_path = NULL;  /* No worktree initially */
     ws->notification_count = 0;
     ws->is_active = FALSE;
     ws->has_notification_ring = FALSE;  /* No notification ring initially */
@@ -518,6 +522,10 @@ create_sidebar_item(WorkspaceData *ws, AppState *state, guint index)
         "  0%, 100% { opacity: 1; transform: scale(1); }"
         "  50% { opacity: 0.6; transform: scale(0.85); }"
         "}"
+        ".dim-label {"
+        "  color: #666666;"
+        "  font-size: 0.8em;"
+        "}"
         ".shortcut-hint {"
         "  color: #444444;"
         "  font-size: 0.65em;"
@@ -603,7 +611,98 @@ add_workspace(AppState *state, guint id, const gchar *name, const gchar *cwd)
             name, id, cwd, ws->git_branch ? ws->git_branch : "none");
 }
 
-/* Create new workspace */
+/* Create new workspace with worktree isolation */
+static guint
+create_new_workspace_with_worktree(AppState *state, const gchar *task_name)
+{
+    guint id = state->next_workspace_id++;
+    gchar *cwd = get_current_cwd();
+    
+    /* Try to create a git worktree for isolation */
+    gchar *worktree_path = NULL;
+    gchar *branch_name = NULL;
+    gboolean worktree_created = FALSE;
+    
+    if (task_name && strlen(task_name) > 0 && g_file_test(cwd, G_FILE_TEST_IS_DIR)) {
+        /* Check if we're in a git repository */
+        gchar *git_dir = g_build_filename(cwd, ".git", NULL);
+        if (g_file_test(git_dir, G_FILE_TEST_IS_DIR)) {
+            g_free(git_dir);
+            
+            /* Create worktree path */
+            gchar *parent_dir = g_path_get_dirname(cwd);
+            worktree_path = g_build_filename(parent_dir, task_name, NULL);
+            branch_name = g_strdup_printf("ws-%s", task_name);
+            
+            /* Run: git worktree add <path> -b <branch> */
+            gchar *cmd = g_strdup_printf("git worktree add \"%s\" -b \"%s\" 2>&1", 
+                                         worktree_path, branch_name);
+            g_print("Creating worktree: %s\n", cmd);
+            
+            FILE *fp = popen(cmd, "r");
+            if (fp) {
+                char buf[256];
+                g_string_append_printf(g_string_new(NULL), "Worktree output: ");
+                while (fgets(buf, sizeof(buf), fp) != NULL) {
+                    g_print("  %s", buf);
+                }
+                int status = pclose(fp);
+                if (status == 0) {
+                    worktree_created = TRUE;
+                    g_print("Worktree created successfully: %s\n", worktree_path);
+                } else {
+                    g_warning("Failed to create worktree (exit status %d)", status);
+                    g_free(worktree_path);
+                    g_free(branch_name);
+                    worktree_path = NULL;
+                    branch_name = NULL;
+                }
+            }
+            g_free(cmd);
+            g_free(parent_dir);
+        } else {
+            g_free(git_dir);
+            g_print("Not in a git repository, using current directory\n");
+        }
+    }
+    
+    /* Use worktree path if created, otherwise use current directory */
+    gchar *workspace_cwd = worktree_path ? worktree_path : g_strdup(cwd);
+    gchar *name = g_strdup_printf("Workspace %u", id);
+    if (worktree_created && task_name) {
+        g_free(name);
+        name = g_strdup(task_name);
+    }
+    
+    /* Create the workspace */
+    add_workspace(state, id, name, workspace_cwd);
+    
+    /* Update worktree info if created */
+    if (worktree_created) {
+        for (guint i = 0; i < state->workspace_count; i++) {
+            if (state->workspaces[i].id == id) {
+                g_free(state->workspaces[i].worktree_path);
+                state->workspaces[i].worktree_path = g_strdup(worktree_path);
+                g_free(state->workspaces[i].git_branch);
+                state->workspaces[i].git_branch = g_strdup(branch_name);
+                break;
+            }
+        }
+    }
+    
+    state->active_workspace_id = id;
+    refresh_sidebar(state);
+    
+    g_free(name);
+    g_free(cwd);
+    g_free(workspace_cwd);
+    g_free(worktree_path);
+    g_free(branch_name);
+    
+    return id;
+}
+
+/* Create new workspace (simple mode - no worktree) */
 static guint
 create_new_workspace(AppState *state)
 {
@@ -620,6 +719,67 @@ create_new_workspace(AppState *state)
     g_free(cwd);
     
     return id;
+}
+
+/* Dialog response callback for worktree creation */
+static void
+on_worktree_dialog_response(GtkDialog *dialog, gint response_id, gpointer user_data)
+{
+    AppState *state = (AppState *)user_data;
+    if (response_id == GTK_RESPONSE_OK) {
+        GtkWidget *entry = g_object_get_data(G_OBJECT(dialog), "entry");
+        const gchar *task_name = gtk_editable_get_text(GTK_EDITABLE(entry));
+        if (task_name && strlen(task_name) > 0) {
+            create_new_workspace_with_worktree(state, task_name);
+        } else {
+            /* Fallback to simple workspace creation */
+            create_new_workspace(state);
+        }
+    } else {
+        /* Cancelled - do nothing */
+    }
+    gtk_window_destroy(GTK_WINDOW(dialog));
+}
+
+/* Prompt for task name to create worktree-isolated workspace */
+static void
+prompt_new_workspace_with_worktree(AppState *state)
+{
+    GtkWidget *dialog = gtk_dialog_new_with_buttons(
+        "Create Isolated Workspace",
+        GTK_WINDOW(state->window),
+        GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT,
+        "Cancel", GTK_RESPONSE_CANCEL,
+        "Create", GTK_RESPONSE_OK,
+        NULL);
+    
+    GtkWidget *content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
+    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 12);
+    gtk_widget_set_margin_start(box, 20);
+    gtk_widget_set_margin_end(box, 20);
+    gtk_widget_set_margin_top(box, 20);
+    gtk_box_append(GTK_BOX(content), box);
+    
+    GtkWidget *label = gtk_label_new("Enter task name for isolated workspace:");
+    gtk_widget_set_halign(label, GTK_ALIGN_START);
+    gtk_box_append(GTK_BOX(box), label);
+    
+    GtkWidget *entry = gtk_entry_new();
+    gtk_entry_set_placeholder_text(GTK_ENTRY(entry), "e.g., feature-auth, bugfix-123");
+    gtk_box_append(GTK_BOX(box), entry);
+    g_object_set_data(G_OBJECT(dialog), "entry", entry);
+    
+    GtkWidget *hint = gtk_label_new("A git worktree will be created to isolate this workspace");
+    gtk_widget_set_halign(hint, GTK_ALIGN_START);
+    gtk_label_set_wrap(GTK_LABEL(hint), TRUE);
+    gtk_widget_add_css_class(hint, "dim-label");
+    gtk_box_append(GTK_BOX(box), hint);
+    
+    g_signal_connect(dialog, "response", G_CALLBACK(on_worktree_dialog_response), state);
+    
+    gtk_window_set_default_size(GTK_WINDOW(dialog), 350, -1);
+    gtk_widget_set_visible(dialog, TRUE);
+    gtk_widget_grab_focus(entry);
 }
 
 /* Update workspace notification badge */
@@ -1695,6 +1855,7 @@ close_workspace(AppState *state, guint workspace_id)
             g_free(ws->name);
             g_free(ws->cwd);
             g_free(ws->git_branch);
+            g_free(ws->worktree_path);
             
             /* Remove from array */
             for (guint j = i; j < state->workspace_count - 1; j++) {
@@ -1827,11 +1988,11 @@ on_key_pressed(GtkEventControllerKey *controller,
             (state & GDK_CONTROL_MASK) != 0,
             (state & GDK_SHIFT_MASK) != 0);
     
-    /* Ctrl+Shift+T: New workspace */
+    /* Ctrl+Shift+T: New workspace with worktree isolation */
     if ((state & GDK_CONTROL_MASK) && (state & GDK_SHIFT_MASK) && 
         (keyval == GDK_KEY_t || keyval == GDK_KEY_T)) {
         g_print("Shortcut matched: Ctrl+Shift+T\n");
-        create_new_workspace(state_app);
+        prompt_new_workspace_with_worktree(state_app);
         return TRUE;
     }
     
