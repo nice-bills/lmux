@@ -6,11 +6,6 @@
 #ifndef VTE_TERMINAL_H
 #define VTE_TERMINAL_H
 
-#include <gtk/gtk.h>
-
-/* Include VTE GTK4 headers - must be available from VTE GTK4 package */
-#include <vte-2.91-gtk4/vte/vte.h>
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -18,6 +13,10 @@
 #include <spawn.h>
 #include <sys/wait.h>
 #include <errno.h>
+
+/* Include VTE GTK4 headers - must be available from VTE GTK4 package */
+#include <gtk/gtk.h>
+#include <vte-2.91-gtk4/vte/vte.h>
 
 /* Terminal data structure */
 typedef struct {
@@ -47,18 +46,18 @@ get_default_shell(void)
         /* Try to get shell from environment, fallback to /bin/bash */
         const char *env_shell = getenv("SHELL");
         if (env_shell && access(env_shell, X_OK) == 0) {
-            shell = strdup(env_shell);
+            shell = g_strdup(env_shell);
         } else {
             /* Try common shells in order */
             const char *shells[] = { "/bin/bash", "/bin/zsh", "/bin/sh", NULL };
             for (int i = 0; shells[i] != NULL; i++) {
                 if (access(shells[i], X_OK) == 0) {
-                    shell = strdup(shells[i]);
+                    shell = g_strdup(shells[i]);
                     break;
                 }
             }
             if (shell == NULL) {
-                shell = strdup("/bin/bash"); /* Last resort */
+                shell = g_strdup("/bin/bash"); /* Last resort */
             }
         }
     }
@@ -426,7 +425,7 @@ vte_terminal_free(VteTerminalData *term)
     if (term->child_pid > 0) {
         kill(term->child_pid, SIGTERM);
         /* Give it time to clean up */
-        usleep(100000);  /* 100ms */
+        g_usleep(100000);  /* 100ms */
         /* If still running, SIGKILL */
         if (kill(term->child_pid, 0) == 0) {
             kill(term->child_pid, SIGKILL);

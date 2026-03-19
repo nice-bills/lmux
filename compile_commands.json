@@ -1,0 +1,10 @@
+[
+{"directory":"@CURRENT_SOURCE_DIR@","command":"gcc -c $f -o ${f%.c}.o @INCFLAGS@ -I/usr/include/vte-2.91-gtk4 -I/usr/include/webkitgtk-6.0 -pthread -Wall","file":"$f"}
+{"directory":"@CURRENT_SOURCE_DIR@","command":"gcc -c $f -o ${f%.c}.o @INCFLAGS@ -I/usr/include/vte-2.91-gtk4 -I/usr/include/webkitgtk-6.0 -pthread -Wall","file":"$f"}
+{"directory":"@CURRENT_SOURCE_DIR@","command":"gcc -c $f -o ${f%.c}.o @INCFLAGS@ -I/usr/include/vte-2.91-gtk4 -I/usr/include/webkitgtk-6.0 -pthread -Wall","file":"$f"}
+{"directory":"@CURRENT_SOURCE_DIR@","command":"gcc -c $f -o ${f%.c}.o @INCFLAGS@ -I/usr/include/vte-2.91-gtk4 -I/usr/include/webkitgtk-6.0 -pthread -Wall","file":"$f"}
+{"directory":"@CURRENT_SOURCE_DIR@","command":"gcc -c $f -o ${f%.c}.o @INCFLAGS@ -I/usr/include/vte-2.91-gtk4 -I/usr/include/webkitgtk-6.0 -pthread -Wall","file":"$f"}
+{"directory":"@CURRENT_SOURCE_DIR@","command":"gcc -c $f -o ${f%.c}.o @INCFLAGS@ -I/usr/include/vte-2.91-gtk4 -I/usr/include/webkitgtk-6.0 -pthread -Wall","file":"$f"}
+{"directory":"@CURRENT_SOURCE_DIR@","command":"gcc -c $f -o ${f%.c}.o @INCFLAGS@ -I/usr/include/vte-2.91-gtk4 -I/usr/include/webkitgtk-6.0 -pthread -Wall","file":"$f"}
+{"directory":"@CURRENT_SOURCE_DIR@","command":"gcc -c $f -o ${f%.c}.o @INCFLAGS@ -I/usr/include/vte-2.91-gtk4 -I/usr/include/webkitgtk-6.0 -pthread -Wall","file":"$f"}
+]
