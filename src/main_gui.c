@@ -655,7 +655,16 @@ create_new_workspace_with_worktree(AppState *state, const gchar *task_name)
             /* Create worktree path */
             gchar *parent_dir = g_path_get_dirname(cwd);
             worktree_path = g_build_filename(parent_dir, task_name, NULL);
-            branch_name = g_strdup_printf("ws-%s", task_name);
+            
+            /* Sanitize branch name - replace spaces with dashes, remove invalid chars */
+            gchar *sanitized = g_strdup(task_name);
+            for (gchar *p = sanitized; *p; p++) {
+                if (*p == ' ' || *p == '/' || *p == '.' || *p == ':') {
+                    *p = '-';
+                }
+            }
+            branch_name = g_strdup_printf("ws-%s", sanitized);
+            g_free(sanitized);
             
             /* Run: git worktree add <path> -b <branch> */
             gchar *cmd = g_strdup_printf("git worktree add \"%s\" -b \"%s\" 2>&1", 
@@ -1732,9 +1741,12 @@ update_browser_tab_bar(AppState *state)
         g_signal_connect(close_btn, "clicked", G_CALLBACK(on_tab_close_clicked), state);
         gtk_box_append(GTK_BOX(tab_box), close_btn);
         
-        /* Store tab id and connect click */
+        /* Store tab id and connect click using gesture */
         g_object_set_data(G_OBJECT(tab_box), "tab-id", GUINT_TO_POINTER(tabs[i].id));
-        g_signal_connect(tab_box, "clicked", G_CALLBACK(on_tab_button_clicked), state);
+        GtkGesture *tab_click = gtk_gesture_click_new();
+        gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(tab_click), 1);
+        gtk_widget_add_controller(tab_box, GTK_EVENT_CONTROLLER(tab_click));
+        g_signal_connect(tab_click, "pressed", G_CALLBACK(on_tab_button_clicked), state);
         
         /* Insert before new tab button */
         GtkWidget *new_tab_btn = gtk_widget_get_first_child(state->browser_tab_bar);
