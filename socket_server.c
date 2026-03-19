@@ -24,6 +24,20 @@ static void on_client_data_ready(GObject *source, GAsyncResult *result, gpointer
 static void start_client_read(CmuxClientConnection *client);
 static void client_connection_free(CmuxClientConnection *client);
 
+/* JSON-RPC structures - MUST be defined before functions that use them */
+struct CmuxJsonRpcRequest {
+    gchar *method;
+    gchar *params;      /* JSON string of params */
+    guint id;           /* Request ID for response matching */
+};
+
+/* JSON-RPC function forward declarations */
+static gboolean is_jsonrpc_request(const gchar *str);
+static struct CmuxJsonRpcRequest* parse_jsonrpc_request(const gchar *json_str);
+static void free_jsonrpc_request(struct CmuxJsonRpcRequest *req);
+static gchar* format_jsonrpc_response(guint id, const gchar *result, const gchar *error);
+static gchar* handle_jsonrpc_request(struct CmuxJsonRpcRequest *req, gpointer user_data);
+
 /* ============================================================================
  * Internal helpers
  * ============================================================================ */
@@ -100,15 +114,33 @@ on_client_data_ready(GObject *source, GAsyncResult *result, gpointer user_data)
         return;
     }
 
-    /* Process the command via callback */
-    if (client->server && client->server->command_cb && length > 0) {
-        gchar *response = client->server->command_cb(
-            client->server,
-            client,
-            line,
-            client->server->command_cb_data
-        );
-
+    /* Process the command - check for JSON-RPC first */
+    if (client->server && length > 0) {
+        gchar *response = NULL;
+        
+        /* Check if this is a JSON-RPC 2.0 request */
+        if (is_jsonrpc_request(line)) {
+            struct CmuxJsonRpcRequest *req = parse_jsonrpc_request(line);
+            if (req) {
+                g_print("Socket: JSON-RPC method='%s' id=%u\n", 
+                        req->method ? req->method : "(null)", req->id);
+                response = handle_jsonrpc_request(req, client->server->command_cb_data);
+                free_jsonrpc_request(req);
+            } else {
+                /* Invalid JSON-RPC */
+                response = format_jsonrpc_response(0, NULL, 
+                    "{\"code\":-32600,\"message\":\"Invalid JSON-RPC\"}");
+            }
+        } else if (client->server->command_cb) {
+            /* Traditional line-based command */
+            response = client->server->command_cb(
+                client->server,
+                client,
+                line,
+                client->server->command_cb_data
+            );
+        }
+        
         if (response != NULL) {
             cmux_socket_server_send_to_client(client, response);
             g_free(response);
@@ -442,4 +474,264 @@ cmux_socket_server_send_to_client(CmuxClientConnection *client,
     }
 
     return TRUE;
+}
+
+/* ============================================================================
+ * JSON-RPC 2.0 Support
+ * ============================================================================ */
+
+/**
+ * JSON-RPC request/response structures
+ */
+typedef struct {
+    gchar *method;
+    gchar *params;      /* JSON string of params */
+    guint id;           /* Request ID for response matching */
+} CmuxJsonRpcRequest;
+
+typedef struct {
+    guint id;           /* Request ID */
+    gchar *result;      /* JSON string of result (caller frees) */
+    gchar *error;       /* JSON string of error (caller frees) if any */
+} CmuxJsonRpcResponse;
+
+/**
+ * parse_jsonrpc_request:
+ * Parses a JSON-RPC 2.0 request from a JSON string.
+ * Returns: Newly allocated struct CmuxJsonRpcRequest (caller frees), or NULL on error.
+ */
+static struct CmuxJsonRpcRequest*
+parse_jsonrpc_request(const gchar *json_str)
+{
+    if (!json_str || *json_str != '{') {
+        return NULL;
+    }
+    
+    struct CmuxJsonRpcRequest *req = g_malloc0(sizeof(struct CmuxJsonRpcRequest));
+    req->id = 0;
+    
+    /* Simple JSON parsing - look for "method", "params", "id" */
+    const gchar *p = json_str;
+    
+    /* Find "method" */
+    const gchar *method_start = strstr(p, "\"method\"");
+    if (!method_start) {
+        g_free(req);
+        return NULL;
+    }
+    
+    /* Find colon after "method" */
+    const gchar *colon = strchr(method_start, ':');
+    if (!colon) {
+        g_free(req);
+        return NULL;
+    }
+    
+    /* Find opening quote of method value */
+    const gchar *value_start = strchr(colon, '"');
+    if (!value_start) {
+        g_free(req);
+        return NULL;
+    }
+    value_start++; /* Skip opening quote */
+    
+    /* Find closing quote */
+    const gchar *value_end = strchr(value_start, '"');
+    if (!value_end) {
+        g_free(req);
+        return NULL;
+    }
+    
+    /* Extract method name */
+    gsize method_len = value_end - value_start;
+    req->method = g_malloc(method_len + 1);
+    strncpy(req->method, value_start, method_len);
+    req->method[method_len] = '\0';
+    
+    /* Find "params" if present */
+    const gchar *params_start = strstr(p, "\"params\"");
+    if (params_start) {
+        colon = strchr(params_start, ':');
+        if (colon) {
+            /* Find opening brace or bracket */
+            value_start = strchr(colon, '{');
+            if (!value_start) value_start = strchr(colon, '[');
+            if (value_start) {
+                value_start++; /* Skip opening brace/bracket */
+                /* Find matching closing brace/bracket */
+                char match = *(value_start - 1) == '{' ? '}' : ']';
+                const gchar *value_end = value_start;
+                int depth = 1;
+                while (*value_end && depth > 0) {
+                    if (*value_end == '{' || *value_end == '[') depth++;
+                    else if (*value_end == '}' || *value_end == ']') depth--;
+                    if (depth > 0) value_end++;
+                }
+                if (depth == 0 && value_end > value_start) {
+                    gsize params_len = value_end - value_start;
+                    req->params = g_malloc(params_len + 1);
+                    strncpy(req->params, value_start, params_len);
+                    req->params[params_len] = '\0';
+                }
+            }
+        }
+    }
+    
+    /* Find "id" if present */
+    const gchar *id_start = strstr(p, "\"id\"");
+    if (id_start) {
+        colon = strchr(id_start, ':');
+        if (colon) {
+            /* Skip whitespace and get number */
+            const gchar *num = colon + 1;
+            while (*num == ' ' || *num == '\t') num++;
+            req->id = atoi(num);
+        }
+    }
+    
+    return req;
+}
+
+/**
+ * free_jsonrpc_request:
+ * Frees a parsed JSON-RPC request.
+ */
+static void
+free_jsonrpc_request(struct CmuxJsonRpcRequest *req)
+{
+    if (!req) return;
+    g_free(req->method);
+    g_free(req->params);
+    g_free(req);
+}
+
+/**
+ * format_jsonrpc_response:
+ * Formats a JSON-RPC 2.0 response string.
+ * Returns: Newly allocated string (caller frees).
+ */
+static gchar*
+format_jsonrpc_response(guint id, const gchar *result, const gchar *error)
+{
+    if (error) {
+        return g_strdup_printf(
+            "{\"jsonrpc\":\"2.0\",\"error\":%s,\"id\":%u}\n",
+            error, id);
+    } else if (result) {
+        return g_strdup_printf(
+            "{\"jsonrpc\":\"2.0\",\"result\":%s,\"id\":%u}\n",
+            result, id);
+    } else {
+        return g_strdup_printf(
+            "{\"jsonrpc\":\"2.0\",\"result\":null,\"id\":%u}\n",
+            id);
+    }
+}
+
+/**
+ * is_jsonrpc_request:
+ * Checks if a string looks like a JSON-RPC 2.0 request.
+ */
+static gboolean
+is_jsonrpc_request(const gchar *str)
+{
+    if (!str) return FALSE;
+    /* Skip whitespace */
+    while (*str == ' ' || *str == '\t' || *str == '\n' || *str == '\r') str++;
+    return *str == '{' && strstr(str, "\"jsonrpc\"") != NULL;
+}
+
+/**
+ * handle_jsonrpc_request:
+ * Handles a JSON-RPC 2.0 request and returns response string.
+ * Returns: Newly allocated response string (caller frees).
+ */
+static gchar*
+handle_jsonrpc_request(struct CmuxJsonRpcRequest *req, gpointer user_data)
+{
+    if (!req || !req->method) {
+        return format_jsonrpc_response(0, NULL, "{\"code\":-32600,\"message\":\"Invalid Request\"}");
+    }
+    
+    /* Route to appropriate handler based on method */
+    if (g_strcmp0(req->method, "split") == 0) {
+        /* split --horizontal/vertical or split --browser <url> */
+        gboolean horizontal = TRUE;
+        gchar *url = NULL;
+        
+        if (req->params) {
+            if (strstr(req->params, "\"horizontal\"")) {
+                horizontal = TRUE;
+            } else if (strstr(req->params, "\"vertical\"")) {
+                horizontal = FALSE;
+            }
+            /* Look for url in params */
+            const gchar *url_start = strstr(req->params, "\"url\"");
+            if (url_start) {
+                const gchar *colon = strchr(url_start, ':');
+                if (colon) {
+                    const gchar *value_start = strchr(colon, '"');
+                    if (value_start) {
+                        value_start++;
+                        const gchar *value_end = strchr(value_start, '"');
+                        if (value_end) {
+                            gsize url_len = value_end - value_start;
+                            url = g_malloc(url_len + 1);
+                            strncpy(url, value_start, url_len);
+                            url[url_len] = '\0';
+                        }
+                    }
+                }
+            }
+        }
+        
+        /* Call user_data callback with split command */
+        /* Format as traditional command for callback */
+        gchar *cmd;
+        if (url) {
+            cmd = g_strdup_printf("split --browser \"%s\"", url);
+        } else {
+            cmd = g_strdup_printf("split --%s", horizontal ? "horizontal" : "vertical");
+        }
+        gchar *result = g_strdup_printf("{\"success\":true,\"command\":\"%s\"}", cmd);
+        g_free(cmd);
+        g_free(url);
+        return format_jsonrpc_response(req->id, result, NULL);
+    }
+    else if (g_strcmp0(req->method, "focus") == 0) {
+        /* focus <pane_id> */
+        guint pane_id = 0;
+        if (req->params) {
+            /* Try to extract pane_id from params */
+            const gchar *id_start = strstr(req->params, "\"pane_id\"");
+            if (id_start) {
+                const gchar *colon = strchr(id_start, ':');
+                if (colon) {
+                    pane_id = atoi(colon + 1);
+                }
+            }
+        }
+        gchar *result = g_strdup_printf("{\"success\":true,\"pane_id\":%u}", pane_id);
+        return format_jsonrpc_response(req->id, result, NULL);
+    }
+    else if (g_strcmp0(req->method, "browser.get_dom") == 0) {
+        /* Return browser DOM as JSON */
+        /* This is a placeholder - actual implementation would query browser */
+        return format_jsonrpc_response(req->id, 
+            "{\"dom\":null,\"error\":\"Browser not available or no DOM\"}", NULL);
+    }
+    else if (g_strcmp0(req->method, "workspace.list") == 0) {
+        /* List workspaces */
+        gchar *result = g_strdup_printf("{\"workspaces\":[],\"message\":\"Use traditional API\"}");
+        return format_jsonrpc_response(req->id, result, NULL);
+    }
+    else {
+        /* Unknown method */
+        gchar *error = g_strdup_printf(
+            "{\"code\":-32601,\"message\":\"Method not found: %s\"}", 
+            req->method);
+        gchar *resp = format_jsonrpc_response(req->id, NULL, error);
+        g_free(error);
+        return resp;
+    }
 }
