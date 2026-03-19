@@ -24,6 +24,7 @@
 #include "lmux_css.h"
 #include "shortcuts_help.h"
 #include "workspace_dialogs.h"
+#include "window_decorations.h"
 #include "workspace_commands.h"
 #include "terminal_commands.h"
 #include "focus_commands.h"
@@ -1361,29 +1362,7 @@ toggle_sidebar(AppState *state)
 static void
 toggle_window_decorations(AppState *state)
 {
-    if (state->window == NULL) {
-        return;
-    }
-    
-    /* Toggle decorations by setting titlebar to NULL or recreating it */
-    static gboolean decorations_hidden = FALSE;
-    decorations_hidden = !decorations_hidden;
-    
-    if (decorations_hidden) {
-        /* Hide titlebar - use SDL-style or just hide headerbar */
-        gtk_window_set_titlebar(GTK_WINDOW(state->window), NULL);
-        gtk_window_set_decorated(GTK_WINDOW(state->window), FALSE);
-        g_print("Window decorations hidden (Kitty-style)\n");
-    } else {
-        /* Show titlebar again */
-        GtkWidget *headerbar = gtk_header_bar_new();
-        gtk_header_bar_set_show_title_buttons(GTK_HEADER_BAR(headerbar), TRUE);
-        gtk_widget_add_css_class(headerbar, "titlebar");
-        gtk_window_set_title(GTK_WINDOW(state->window), "cmux-linux");
-        gtk_window_set_titlebar(GTK_WINDOW(state->window), headerbar);
-        gtk_window_set_decorated(GTK_WINDOW(state->window), TRUE);
-        g_print("Window decorations shown\n");
-    }
+    window_toggle_decorations(GTK_WINDOW(state->window), "cmux-linux");
 }
 
 /* Show keyboard shortcuts help dialog */
