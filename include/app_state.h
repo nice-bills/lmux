@@ -61,3 +61,6 @@ typedef enum {
     BROWSER_SPLIT_HORIZONTAL,
     BROWSER_SPLIT_VERTICAL
 } BrowserSplitOrientation;
+
+/* Forward declaration of AppState - actual definition is in main_gui.c */
+typedef struct _AppState AppState;

@@ -149,3 +149,8 @@ const gchar* cmux_socket_server_get_path(CmuxSocketServer *server);
  */
 gboolean cmux_socket_server_send_to_client(CmuxClientConnection *client,
                                             const gchar *message);
+
+/* External functions from main_gui.c for IPC control */
+/* NOTE: These functions use void* to avoid circular dependencies.
+ * Cast to AppState* in the implementation. */
+void switch_to_workspace(void *state, guint workspace_id);

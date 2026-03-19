@@ -699,7 +699,7 @@ handle_jsonrpc_request(struct CmuxJsonRpcRequest *req, gpointer user_data)
         return format_jsonrpc_response(req->id, result, NULL);
     }
     else if (g_strcmp0(req->method, "focus") == 0) {
-        /* focus <pane_id> */
+        /* focus <pane_id> - switch to workspace */
         guint pane_id = 0;
         if (req->params) {
             /* Try to extract pane_id from params */
@@ -711,14 +711,21 @@ handle_jsonrpc_request(struct CmuxJsonRpcRequest *req, gpointer user_data)
                 }
             }
         }
+        /* Actually switch to the workspace */
+        if (user_data && pane_id > 0) {
+            switch_to_workspace(user_data, pane_id);
+        }
         gchar *result = g_strdup_printf("{\"success\":true,\"pane_id\":%u}", pane_id);
         return format_jsonrpc_response(req->id, result, NULL);
     }
     else if (g_strcmp0(req->method, "browser.get_dom") == 0) {
-        /* Return browser DOM as JSON */
-        /* This is a placeholder - actual implementation would query browser */
+        /* Return browser DOM as JSON - placeholder requires browser integration */
+        if (user_data) {
+            /* TODO: Query actual DOM from browser instance */
+            /* This would call webkit_web_view_run_javascript and return accessibility tree */
+        }
         return format_jsonrpc_response(req->id, 
-            "{\"dom\":null,\"error\":\"Browser not available or no DOM\"}", NULL);
+            "{\"dom\":null,\"error\":\"Browser DOM extraction not yet implemented\"}", NULL);
     }
     else if (g_strcmp0(req->method, "workspace.list") == 0) {
         /* List workspaces */

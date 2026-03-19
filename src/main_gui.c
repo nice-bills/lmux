@@ -34,7 +34,7 @@
 
 #define MAX_WORKSPACES 32
 
-/* Application state - central shared state structure */
+/* AppState struct - defined here after app_state.h provides forward declaration */
 struct _AppState {
     /* GTK Application */
     GtkApplication *app;
@@ -188,8 +188,7 @@ create_workspace(guint id, const gchar *name, const gchar *cwd)
     return ws;
 }
 
-/* Forward declaration for switch_to_workspace */
-static void switch_to_workspace(AppState *state, guint workspace_id);
+/* Forward declarations */
 static void close_workspace(AppState *state, guint workspace_id);
 static gboolean reorder_workspaces(AppState *state, guint from_idx, guint to_idx);
 static void refresh_sidebar(AppState *state);
@@ -1712,10 +1711,11 @@ update_browser_tab_bar(AppState *state)
     }
 }
 
-/* Switch to workspace */
-static void
-switch_to_workspace(AppState *state, guint workspace_id)
+/* Switch to workspace (non-static for IPC access from socket_server.c) */
+void
+switch_to_workspace(void *state_ptr, guint workspace_id)
 {
+    AppState *state = (AppState *)state_ptr;
     state->active_workspace_id = workspace_id;
     
     /* Update active state */
