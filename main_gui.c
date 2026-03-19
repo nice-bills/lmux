@@ -86,6 +86,9 @@ typedef struct {
     guint next_workspace_id;
     guint drag_source_index;  /* Track which workspace is being dragged for reordering */
     CmuxNotificationManager *notification_manager;  /* D-Bus notification manager */
+    gboolean focus_mode;  /* Focus mode - hides sidebar and browser for distraction-free coding */
+    gboolean sidebar_visible_before_focus;  /* Store sidebar state before focus mode */
+    gboolean browser_visible_before_focus;  /* Store browser state before focus mode */
     /* Notification tracking (VAL-NOTIF-003, VAL-NOTIF-004) */
     PendingNotification pending_notifications[MAX_PENDING_NOTIFICATIONS];
     guint pending_notification_count;
@@ -132,6 +135,7 @@ static void on_terminal_attention(gpointer user_data);
 static void set_workspace_notification_ring(AppState *state, guint workspace_id, gboolean has_ring);
 static void prompt_new_workspace_with_worktree(AppState *state);
 static guint create_new_workspace_with_worktree(AppState *state, const gchar *task_name);
+static void toggle_focus_mode(AppState *state);
 /* Get current working directory */
 static gchar*
 get_current_cwd(void)
@@ -782,6 +786,42 @@ prompt_new_workspace_with_worktree(AppState *state)
     gtk_widget_grab_focus(entry);
 }
 
+/* Toggle focus mode - hides sidebar and browser for distraction-free coding */
+static void
+toggle_focus_mode(AppState *state)
+{
+    if (!state) return;
+    
+    state->focus_mode = !state->focus_mode;
+    
+    if (state->focus_mode) {
+        /* Entering focus mode - store current visibility and hide */
+        state->sidebar_visible_before_focus = state->sidebar_visible;
+        state->browser_visible_before_focus = state->browser_visible;
+        
+        /* Hide sidebar */
+        if (state->sidebar_paned && state->sidebar_visible) {
+            gtk_paned_set_position(GTK_PANED(state->sidebar_paned), 0);
+            state->sidebar_visible = FALSE;
+        }
+        
+        /* Hide browser if visible */
+        if (state->browser_visible && state->browser_manager) {
+            close_browser_split(state);
+        }
+        
+        g_print("Focus mode ON - sidebar and browser hidden\n");
+    } else {
+        /* Exiting focus mode - restore previous visibility */
+        if (state->sidebar_paned && !state->sidebar_visible) {
+            gtk_paned_set_position(GTK_PANED(state->sidebar_paned), 220);  /* Default sidebar width */
+            state->sidebar_visible = state->sidebar_visible_before_focus;
+        }
+        
+        g_print("Focus mode OFF - sidebar and browser restored\n");
+    }
+}
+
 /* Update workspace notification badge */
 static void
 update_workspace_notifications(AppState *state, guint workspace_id, guint count)
@@ -1403,6 +1443,7 @@ show_shortcuts_help(AppState *state)
     const char *view_shortcuts[] = {
         "Ctrl+Shift+S   Toggle sidebar",
         "Ctrl+Shift+D   Toggle decorations (Kitty)",
+        "Ctrl+Shift+F   Focus mode (hide sidebar/browser)",
         "Ctrl+Shift+N   Toggle notification panel",
         "Ctrl+Shift+B   Toggle browser",
         "Ctrl+Shift+H   Browser horizontal split",
@@ -2076,6 +2117,13 @@ on_key_pressed(GtkEventControllerKey *controller,
     if ((state & GDK_CONTROL_MASK) && (state & GDK_SHIFT_MASK) && 
         (keyval == GDK_KEY_d || keyval == GDK_KEY_D)) {
         toggle_window_decorations(state_app);
+        return TRUE;
+    }
+    
+    /* Ctrl+Shift+F: Toggle focus mode */
+    if ((state & GDK_CONTROL_MASK) && (state & GDK_SHIFT_MASK) && 
+        (keyval == GDK_KEY_f || keyval == GDK_KEY_F)) {
+        toggle_focus_mode(state_app);
         return TRUE;
     }
     
@@ -3035,6 +3083,11 @@ main(int argc, char **argv)
     state->drag_source_index = 0xFFFFFFFF;  /* Invalid index - no drag in progress */
     /* Initialize notification tracking (VAL-NOTIF-003, VAL-NOTIF-004) */
     state->pending_notification_count = 0;
+    
+    /* Initialize focus mode */
+    state->focus_mode = FALSE;
+    state->sidebar_visible_before_focus = TRUE;
+    state->browser_visible_before_focus = FALSE;
     state->next_notification_id = 1;
     state->notification_panel = NULL;
     /* Initialize sidebar paned (set in activate) */
