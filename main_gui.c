@@ -426,11 +426,18 @@ create_sidebar_item(WorkspaceData *ws, AppState *state, guint index)
         gtk_box_append(GTK_BOX(label_box), git_label);
     }
     
-    /* Notification badge */
+    /* Notification badge (count) */
     if (ws->notification_count > 0) {
         badge = gtk_label_new(g_strdup_printf("%u", ws->notification_count));
         gtk_widget_add_css_class(badge, "notification-badge");
         gtk_box_append(GTK_BOX(item_box), badge);
+    }
+    
+    /* Notification ring indicator (blue dot for attention) */
+    if (ws->has_notification_ring) {
+        GtkWidget *ring_indicator = gtk_image_new_from_icon_name("dialog-information");
+        gtk_widget_add_css_class(ring_indicator, "notification-ring-indicator");
+        gtk_box_append(GTK_BOX(item_box), ring_indicator);
     }
     
     /* Keyboard shortcut hint (Cmd+1 through Cmd+9 based on index) */
@@ -502,6 +509,14 @@ create_sidebar_item(WorkspaceData *ws, AppState *state, guint index)
         ".notification-badge:hover {"
         "  transform: scale(1.15);"
         "  animation: none;"
+        "}"
+        ".notification-ring-indicator {"
+        "  color: #00aaff;"
+        "  animation: ring-pulse 1.5s ease-in-out infinite;"
+        "}"
+        "@keyframes ring-pulse {"
+        "  0%, 100% { opacity: 1; transform: scale(1); }"
+        "  50% { opacity: 0.6; transform: scale(0.85); }"
         "}"
         ".shortcut-hint {"
         "  color: #444444;"
