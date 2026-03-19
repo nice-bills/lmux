@@ -39,7 +39,7 @@ CFLAGS="$(pkg-config --cflags vte-2.91-gtk4 gtk4 gio-2.0 webkitgtk-6.0 2>/dev/nu
 LIBS="$(pkg-config --libs vte-2.91-gtk4 gtk4 gio-2.0 webkitgtk-6.0 2>/dev/null) -lutil -lpthread"
 
 # Source files
-SOURCES="main_gui.c vte_terminal.h browser.c notification.c socket_server.c workspace_commands.c terminal_commands.c focus_commands.c session_persistence.c lmux_css.c shortcuts_help.c"
+SOURCES="main_gui.c vte_terminal.h browser.c notification.c socket_server.c workspace_commands.c terminal_commands.c focus_commands.c session_persistence.c lmux_css.c shortcuts_help.c workspace_dialogs.c"
 
 echo "Compiling lmux..."
 echo "  Sources: $SOURCES"

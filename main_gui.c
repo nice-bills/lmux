@@ -23,6 +23,7 @@
 #include "socket_server.h"
 #include "lmux_css.h"
 #include "shortcuts_help.h"
+#include "workspace_dialogs.h"
 #include "workspace_commands.h"
 #include "terminal_commands.h"
 #include "focus_commands.h"
