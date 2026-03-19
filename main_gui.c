@@ -21,6 +21,7 @@
 #include "notification.h"
 #include "browser.h"
 #include "socket_server.h"
+#include "lmux_css.h"
 #include "workspace_commands.h"
 #include "terminal_commands.h"
 #include "focus_commands.h"
@@ -2550,6 +2551,9 @@ activate(GtkApplication *app, gpointer user_data)
 {
     AppState *state = (AppState *)user_data;
     GtkCssProvider *css_provider;
+    
+    /* Initialize shared CSS */
+    lmux_css_init();
     
     /* Create the main window */
     state->window = gtk_application_window_new(app);
