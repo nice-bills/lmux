@@ -127,6 +127,8 @@ static void on_tab_close_clicked(GtkButton *button, gpointer user_data);
 static void update_browser_tab_bar(AppState *state);
 static void show_shortcuts_help(AppState *state);
 static void rename_active_workspace(AppState *state);
+static void on_terminal_attention(gpointer user_data);
+static void set_workspace_notification_ring(AppState *state, guint workspace_id, gboolean has_ring);
 /* Get current working directory */
 static gchar*
 get_current_cwd(void)
@@ -654,6 +656,22 @@ add_demo_notification_timeout2(gpointer user_data)
     }
     
     return G_SOURCE_REMOVE;  /* Don't repeat */
+}
+
+/* OSC 777 / Bell attention callback - triggers Ring of Fire */
+static void
+on_terminal_attention(gpointer user_data)
+{
+    AppState *state = (AppState *)user_data;
+    if (!state || state->active_workspace_id == 0) return;
+    
+    /* Trigger the notification ring on the active workspace */
+    set_workspace_notification_ring(state, state->active_workspace_id, TRUE);
+    g_print("OSC 777 / Bell: Ring of Fire triggered for workspace %u\n", 
+            state->active_workspace_id);
+    
+    /* Update sidebar to show notification indicator */
+    refresh_sidebar(state);
 }
 
 /* Set notification ring for a workspace (VAL-NOTIF-002) */
@@ -2364,6 +2382,9 @@ activate(GtkApplication *app, gpointer user_data)
     state->terminal_view = vte_terminal_get_widget(term);
     state->terminal_data = term;
     
+    /* Set up attention callback for OSC 777 (Ring of Fire) */
+    vte_terminal_set_attention_callback(term, on_terminal_attention, state);
+    
     /* Set up keyboard controller for VTE widget to capture shortcuts before VTE processes them */
     GtkEventController *terminal_key_controller = gtk_event_controller_key_new();
     gtk_event_controller_set_propagation_phase(terminal_key_controller, GTK_PHASE_CAPTURE);
@@ -2479,12 +2500,13 @@ activate(GtkApplication *app, gpointer user_data)
         "  background: #444444;"
         "}"
         
-        /* Notification ring - sky blue, subtle */
+        /* Notification ring - glowing blue "Ring of Fire" */
         ".notification-ring {"
-        "  border: 2px solid #87ceeb;"
-        "  border-radius: 4px;"
+        "  border: 2px solid #00aaff;"
+        "  border-radius: 6px;"
         "  background: #000000;"
-        "  transition: border-color 0.3s ease, border-width 0.3s ease;"
+        "  box-shadow: 0 0 15px #00aaff, 0 0 30px #00aaff40, inset 0 0 10px #00aaff20;"
+        "  transition: box-shadow 0.3s ease, border-color 0.3s ease;"
         "}"
         
         /* ========== Terminal (Kitty-style) ========== */

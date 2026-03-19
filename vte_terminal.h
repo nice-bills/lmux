@@ -26,6 +26,8 @@ typedef struct {
     GtkWidget *container;    /* Container for terminal + scrollbar */
     GPid child_pid;          /* PID of the shell process */
     char *working_directory; /* Current working directory */
+    void (*attention_callback)(gpointer user_data);  /* OSC 777 callback */
+    gpointer attention_data;  /* User data for callback */
 } VteTerminalData;
 
 /* Forward declarations */
@@ -34,6 +36,7 @@ static void on_vte_terminal_child_exited(GtkWidget *widget, gint status, gpointe
 static void on_vte_terminal_title_changed(GtkWidget *widget, gpointer data);
 static void on_vte_spawn_async_callback(VteTerminal *terminal, GPid pid, GError *error, gpointer user_data);
 static void on_vte_click_pressed(GtkGestureClick *gesture, guint n_press, gdouble x, gdouble y, gpointer user_data);
+static void on_vte_bell(VteTerminal *terminal, gpointer user_data);
 
 /* Get the default shell */
 static char *
@@ -154,6 +157,20 @@ on_vte_terminal_title_changed(GtkWidget *widget, gpointer data)
         g_print("VTE Terminal: title changed to '%s'\n", title);
     }
     (void)data;
+}
+
+/* Handle bell signal - triggered by OSC 777 or terminal bell */
+static void
+on_vte_bell(VteTerminal *terminal, gpointer user_data)
+{
+    VteTerminalData *term = (VteTerminalData *)user_data;
+    g_print("VTE Terminal: bell/attention signal received\n");
+    
+    /* Call attention callback if set (for OSC 777 handling) */
+    if (term && term->attention_callback) {
+        term->attention_callback(term->attention_data);
+    }
+    (void)terminal;
 }
 
 /* Handle context menu actions */
@@ -294,6 +311,10 @@ vte_terminal_create(void)
     /* Connect signals - note: VTE handles keyboard input internally */
     g_signal_connect(term->terminal, "child-exited", G_CALLBACK(on_vte_terminal_child_exited), term);
     g_signal_connect(term->terminal, "window-title-changed", G_CALLBACK(on_vte_terminal_title_changed), term);
+    g_signal_connect(term->terminal, "bell", G_CALLBACK(on_vte_bell), term);
+    
+    /* Enable OSC 777 for attention/notification sequences (dmux style) */
+    vte_terminal_set_enable_legacy_osc777(vte, TRUE);
     
     /* Set up context menu for right-click using gesture click */
     GtkGesture *click_gesture = gtk_gesture_click_new();
@@ -369,6 +390,27 @@ gboolean
 vte_terminal_is_running(VteTerminalData *term)
 {
     return term->child_pid > 0;
+}
+
+/* Set attention callback for OSC 777 / bell notifications */
+void
+vte_terminal_set_attention_callback(VteTerminalData *term, 
+                                    void (*callback)(gpointer), 
+                                    gpointer user_data)
+{
+    if (term) {
+        term->attention_callback = callback;
+        term->attention_data = user_data;
+    }
+}
+
+/* Trigger attention manually (for testing or internal use) */
+void
+vte_terminal_trigger_attention(VteTerminalData *term)
+{
+    if (term && term->attention_callback) {
+        term->attention_callback(term->attention_data);
+    }
 }
 
 /* Destroy terminal */
