@@ -119,11 +119,12 @@ static void add_notification(AppState *state, guint workspace_id, const gchar *t
 static void clear_notification(AppState *state, guint notification_id);
 static void clear_all_notifications_for_workspace(AppState *state, guint workspace_id);
 static guint get_unread_notification_count(AppState *state, guint workspace_id);
+static void refresh_notification_panel(AppState *state);
 static void create_notification_panel(AppState *state);
+static void on_notification_item_clicked(GtkWidget *widget, gpointer user_data);
 static void toggle_notification_panel(AppState *state);
 static void toggle_sidebar(AppState *state);
 static void toggle_window_decorations(AppState *state);
-static void refresh_notification_panel(AppState *state);
 
 /* Forward declarations for browser functions (VAL-BROWSER-001, VAL-BROWSER-002, VAL-BROWSER-003, VAL-BROWSER-005) */
 static void toggle_browser(AppState *state);
@@ -1064,10 +1065,6 @@ mark_all_notifications_read(AppState *state)
         refresh_notification_panel(state);
     }
 }
-
-/* ============================================================================
- * Notification Panel UI (VAL-NOTIF-004)
- * ============================================================================ */
 
 /* Notification panel item clicked - switch to workspace and clear notification */
 static void
