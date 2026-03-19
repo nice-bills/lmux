@@ -719,13 +719,16 @@ handle_jsonrpc_request(struct CmuxJsonRpcRequest *req, gpointer user_data)
         return format_jsonrpc_response(req->id, result, NULL);
     }
     else if (g_strcmp0(req->method, "browser.get_dom") == 0) {
-        /* Return browser DOM as JSON - placeholder requires browser integration */
+        /* Return browser DOM as JSON */
         if (user_data) {
-            /* TODO: Query actual DOM from browser instance */
-            /* This would call webkit_web_view_run_javascript and return accessibility tree */
+            BrowserInstance *inst = socket_get_browser_instance(user_data);
+            if (inst) {
+                gchar *dom = cmux_browser_get_dom(inst);
+                return format_jsonrpc_response(req->id, dom, NULL);
+            }
         }
         return format_jsonrpc_response(req->id, 
-            "{\"dom\":null,\"error\":\"Browser DOM extraction not yet implemented\"}", NULL);
+            "{\"dom\":null,\"error\":\"Browser not available\"}", NULL);
     }
     else if (g_strcmp0(req->method, "workspace.list") == 0) {
         /* List workspaces */

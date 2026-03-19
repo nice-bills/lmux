@@ -301,4 +301,14 @@ guint cmux_browser_get_tab_count(BrowserManager *manager);
  */
 BrowserTab* cmux_browser_get_tabs(BrowserManager *manager);
 
+/**
+ * cmux_browser_get_dom:
+ * @instance: Browser instance
+ * 
+ * Get the current page DOM as a JSON string using JavaScript injection.
+ * 
+ * Returns: JSON string with DOM structure, or NULL on error. Must be freed with g_free().
+ */
+gchar* cmux_browser_get_dom(BrowserInstance *instance);
+
 #endif /* CMUX_BROWSER_H */

@@ -1727,6 +1727,15 @@ switch_to_workspace(void *state_ptr, guint workspace_id)
     g_print("Switched to workspace %u\n", workspace_id);
 }
 
+/* Get browser instance from AppState for IPC DOM extraction */
+BrowserInstance*
+socket_get_browser_instance(void *app_state)
+{
+    if (!app_state) return NULL;
+    AppState *state = (AppState *)app_state;
+    return state->browser_instance;
+}
+
 /* Close workspace */
 static void
 close_workspace(AppState *state, guint workspace_id)

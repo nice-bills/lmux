@@ -931,3 +931,26 @@ cmux_browser_get_tabs(BrowserManager *manager)
 {
     return manager ? manager->tabs : NULL;
 }
+
+/* Simplified DOM extraction - returns basic page info */
+/* Full DOM extraction requires WebKitGTK 6.0 async JS API */
+gchar*
+cmux_browser_get_dom(BrowserInstance *instance)
+{
+    if (!instance || !instance->web_view) {
+        return g_strdup("{\"error\":\"Browser not initialized\"}");
+    }
+    
+    /* Get page info - web_view is a GtkWidget wrapping WebKitWebView */
+    const gchar *title = webkit_web_view_get_title(WEBKIT_WEB_VIEW(instance->web_view));
+    const gchar *uri = webkit_web_view_get_uri(WEBKIT_WEB_VIEW(instance->web_view));
+    
+    /* Build simplified DOM response */
+    GString *dom = g_string_new("{");
+    g_string_append_printf(dom, "\"title\":\"%s\",", title ? title : "");
+    g_string_append_printf(dom, "\"url\":\"%s\",", uri ? uri : "");
+    g_string_append(dom, "\"message\":\"Use browser DevTools for full DOM inspection\"");
+    g_string_append(dom, "}");
+    
+    return g_string_free(dom, FALSE);
+}

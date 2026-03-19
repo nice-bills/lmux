@@ -13,6 +13,7 @@
 
 #include <glib.h>
 #include <gio/gio.h>
+#include "browser.h"
 
 /* Default socket path */
 #define CMUX_SOCKET_PATH "/tmp/cmux-linux.sock"
@@ -154,3 +155,6 @@ gboolean cmux_socket_server_send_to_client(CmuxClientConnection *client,
 /* NOTE: These functions use void* to avoid circular dependencies.
  * Cast to AppState* in the implementation. */
 void switch_to_workspace(void *state, guint workspace_id);
+
+/* Get browser instance from AppState - for DOM extraction */
+BrowserInstance* socket_get_browser_instance(void *app_state);
