@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# build.sh - Build script for lmux
+# build.sh - Build script for lmux and lmuxd
 #
 # Requires: VTE (libvte-2.91-gtk4), GTK4, WebKitGTK 6.0
 #
@@ -38,32 +38,53 @@ echo "Using WebKitGTK 6.0"
 CFLAGS="$(pkg-config --cflags vte-2.91-gtk4 gtk4 gio-2.0 webkitgtk-6.0 2>/dev/null) -Iinclude"
 LIBS="$(pkg-config --libs vte-2.91-gtk4 gtk4 gio-2.0 webkitgtk-6.0 2>/dev/null) -lutil -lpthread"
 
-# Source files (main_gui.c first, then socket_server, then others)
+# ============================================================
+# Build lmuxd (daemon)
+# ============================================================
+DAEMON_SOURCES="src/daemon/lmuxd-main.c src/daemon/lmuxd-core.c src/daemon/lmuxd-socket.c src/daemon/lmuxd-dbus.c"
+
+echo "Building lmuxd (daemon)..."
+objs=""
+for src in $DAEMON_SOURCES; do
+    obj="${src%.c}.o"
+    objname=$(basename "$obj")
+    echo "  Compiling $src"
+    gcc -c "$src" -o "/tmp/${objname}" $CFLAGS -Wall 2>&1 | grep -E "^[^/].*warning:|^[^/].*error:" || true
+    if [ -f "/tmp/${objname}" ]; then
+        objs="$objs /tmp/${objname}"
+    fi
+done
+
+echo "  Linking lmuxd..."
+gcc -o "./lmuxd" $objs $LIBS 2>&1
+rm -f /tmp/*.o
+echo "  Built: ./lmuxd"
+
+# ============================================================
+# Build lmux (GUI client)
+# ============================================================
 SOURCES="src/main_gui.c src/vte_terminal.h src/browser.c src/notification.c src/workspace_commands.c src/terminal_commands.c src/focus_commands.c src/session_persistence.c src/lmux_css.c src/shortcuts_help.c src/workspace_dialogs.c src/window_decorations.c src/socket_server.c"
 
-echo "Compiling lmux..."
-echo "  Sources: $SOURCES"
+echo ""
+echo "Building lmux (GUI)..."
 
-# Compile each file separately and link
 objs=""
 for src in $SOURCES; do
     if [[ "$src" == *.h ]]; then
         continue
     fi
     obj="${src%.c}.o"
-    echo "  Compiling $src -> $obj"
-    gcc -c "$src" -o "$obj" $CFLAGS -Wall 2>&1 | grep -E "^[^/].*warning:|^[^/].*error:" || true
-    if [ -f "$obj" ]; then
-        objs="$objs $obj"
+    objname=$(basename "$obj")
+    echo "  Compiling $src"
+    gcc -c "$src" -o "/tmp/${objname}" $CFLAGS -Wall 2>&1 | grep -E "^[^/].*warning:|^[^/].*error:" || true
+    if [ -f "/tmp/${objname}" ]; then
+        objs="$objs /tmp/${objname}"
     fi
 done
 
-# Link all object files
-echo "  Linking..."
+echo "  Linking lmux..."
 gcc -o "./lmux" $objs $LIBS 2>&1
-
-# Clean up object files
-rm -f *.o
+rm -f /tmp/*.o
 
 echo ""
-echo "Build complete! Run: ./lmux"
+echo "Build complete! Run: ./lmux (GUI) or ./lmuxd (daemon)"
