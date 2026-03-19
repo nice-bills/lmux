@@ -6,11 +6,6 @@
 #ifndef VTE_TERMINAL_H
 #define VTE_TERMINAL_H
 
-#include <gtk/gtk.h>
-
-/* Include VTE GTK4 headers - must be available from VTE GTK4 package */
-#include <vte-2.91-gtk4/vte/vte.h>
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -19,6 +14,10 @@
 #include <sys/wait.h>
 #include <errno.h>
 
+/* Include VTE GTK4 headers - must be available from VTE GTK4 package */
+#include <gtk/gtk.h>
+#include <vte-2.91-gtk4/vte/vte.h>
+
 /* Terminal data structure */
 typedef struct {
     GtkWidget *terminal;     /* VTE terminal widget */
@@ -26,6 +25,8 @@ typedef struct {
     GtkWidget *container;    /* Container for terminal + scrollbar */
     GPid child_pid;          /* PID of the shell process */
     char *working_directory; /* Current working directory */
+    void (*attention_callback)(gpointer user_data);  /* OSC 777 callback */
+    gpointer attention_data;  /* User data for callback */
 } VteTerminalData;
 
 /* Forward declarations */
@@ -34,6 +35,7 @@ static void on_vte_terminal_child_exited(GtkWidget *widget, gint status, gpointe
 static void on_vte_terminal_title_changed(GtkWidget *widget, gpointer data);
 static void on_vte_spawn_async_callback(VteTerminal *terminal, GPid pid, GError *error, gpointer user_data);
 static void on_vte_click_pressed(GtkGestureClick *gesture, guint n_press, gdouble x, gdouble y, gpointer user_data);
+static void on_vte_bell(VteTerminal *terminal, gpointer user_data);
 
 /* Get the default shell */
 static char *
@@ -44,18 +46,18 @@ get_default_shell(void)
         /* Try to get shell from environment, fallback to /bin/bash */
         const char *env_shell = getenv("SHELL");
         if (env_shell && access(env_shell, X_OK) == 0) {
-            shell = strdup(env_shell);
+            shell = g_strdup(env_shell);
         } else {
             /* Try common shells in order */
             const char *shells[] = { "/bin/bash", "/bin/zsh", "/bin/sh", NULL };
             for (int i = 0; shells[i] != NULL; i++) {
                 if (access(shells[i], X_OK) == 0) {
-                    shell = strdup(shells[i]);
+                    shell = g_strdup(shells[i]);
                     break;
                 }
             }
             if (shell == NULL) {
-                shell = strdup("/bin/bash"); /* Last resort */
+                shell = g_strdup("/bin/bash"); /* Last resort */
             }
         }
     }
@@ -156,6 +158,20 @@ on_vte_terminal_title_changed(GtkWidget *widget, gpointer data)
     (void)data;
 }
 
+/* Handle bell signal - triggered by OSC 777 or terminal bell */
+static void
+on_vte_bell(VteTerminal *terminal, gpointer user_data)
+{
+    VteTerminalData *term = (VteTerminalData *)user_data;
+    g_print("VTE Terminal: bell/attention signal received\n");
+    
+    /* Call attention callback if set (for OSC 777 handling) */
+    if (term && term->attention_callback) {
+        term->attention_callback(term->attention_data);
+    }
+    (void)terminal;
+}
+
 /* Handle context menu actions */
 static void
 on_menu_copy(GSimpleAction *action, GVariant *parameter, gpointer user_data)
@@ -200,13 +216,14 @@ on_vte_click_pressed(GtkGestureClick *gesture, guint n_press, gdouble x, gdouble
     guint button;
     g_object_get(G_OBJECT(gesture), "button", &button, NULL);
     
+    g_print("VTE click: n_press=%u button=%u x=%f y=%f\n", n_press, button, x, y);
+    
     if (n_press != 1 || button != GDK_BUTTON_SECONDARY) {
         return;
     }
 
     /* Create a popover menu with Copy, Paste, Select All */
     GtkWidget *popover = gtk_popover_new();
-    gtk_popover_set_pointing_to(GTK_POPOVER(popover), &(GdkRectangle){(int)x, (int)y, 1, 1});
     
     /* Create a box for menu items */
     GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
@@ -234,8 +251,17 @@ on_vte_click_pressed(GtkGestureClick *gesture, guint n_press, gdouble x, gdouble
     g_signal_connect(select_all_btn, "clicked", G_CALLBACK(on_menu_select_all), term);
     gtk_box_append(GTK_BOX(box), select_all_btn);
     
-    /* Show the popover at click position */
+    /* Set position relative to click point */
+    GdkRectangle rect = {(int)x, (int)y, 1, 1};
+    gtk_popover_set_pointing_to(GTK_POPOVER(popover), &rect);
+    
+    /* Set as child of terminal (this positions it relative to terminal) */
+    gtk_widget_set_parent(popover, term->terminal);
+    
+    /* Show the popover */
     gtk_popover_popup(GTK_POPOVER(popover));
+    
+    g_print("VTE context menu shown\n");
 }
 
 /* Create terminal widget using VTE */
@@ -290,6 +316,10 @@ vte_terminal_create(void)
     /* Connect signals - note: VTE handles keyboard input internally */
     g_signal_connect(term->terminal, "child-exited", G_CALLBACK(on_vte_terminal_child_exited), term);
     g_signal_connect(term->terminal, "window-title-changed", G_CALLBACK(on_vte_terminal_title_changed), term);
+    g_signal_connect(term->terminal, "bell", G_CALLBACK(on_vte_bell), term);
+    
+    /* Enable OSC 777 for attention/notification sequences (dmux style) */
+    vte_terminal_set_enable_legacy_osc777(vte, TRUE);
     
     /* Set up context menu for right-click using gesture click */
     GtkGesture *click_gesture = gtk_gesture_click_new();
@@ -367,6 +397,27 @@ vte_terminal_is_running(VteTerminalData *term)
     return term->child_pid > 0;
 }
 
+/* Set attention callback for OSC 777 / bell notifications */
+void
+vte_terminal_set_attention_callback(VteTerminalData *term, 
+                                    void (*callback)(gpointer), 
+                                    gpointer user_data)
+{
+    if (term) {
+        term->attention_callback = callback;
+        term->attention_data = user_data;
+    }
+}
+
+/* Trigger attention manually (for testing or internal use) */
+void
+vte_terminal_trigger_attention(VteTerminalData *term)
+{
+    if (term && term->attention_callback) {
+        term->attention_callback(term->attention_data);
+    }
+}
+
 /* Destroy terminal */
 void
 vte_terminal_free(VteTerminalData *term)
@@ -374,7 +425,7 @@ vte_terminal_free(VteTerminalData *term)
     if (term->child_pid > 0) {
         kill(term->child_pid, SIGTERM);
         /* Give it time to clean up */
-        usleep(100000);  /* 100ms */
+        g_usleep(100000);  /* 100ms */
         /* If still running, SIGKILL */
         if (kill(term->child_pid, 0) == 0) {
             kill(term->child_pid, SIGKILL);

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=lmux
+Comment=Terminal multiplexer with built-in browser for Linux
+Exec=lmux
+Icon=lmux
+Terminal=false
+Type=Application
+Categories=System;TerminalEmulator;
+Keywords=terminal; multiplexer; browser; vt;
+StartupWMClass=lmux

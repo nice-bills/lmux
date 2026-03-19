@@ -21,6 +21,10 @@
 #include "notification.h"
 #include "browser.h"
 #include "socket_server.h"
+#include "lmux_css.h"
+#include "shortcuts_help.h"
+#include "workspace_dialogs.h"
+#include "window_decorations.h"
 #include "workspace_commands.h"
 #include "terminal_commands.h"
 #include "focus_commands.h"
@@ -35,6 +39,7 @@ typedef struct {
     gchar *name;
     gchar *cwd;
     gchar *git_branch;
+    gchar *worktree_path;       /* Git worktree path if isolated */
     guint notification_count;
     gboolean is_active;
     gboolean has_notification_ring;  /* Visual ring indicator for pending notifications */
@@ -85,6 +90,9 @@ typedef struct {
     guint next_workspace_id;
     guint drag_source_index;  /* Track which workspace is being dragged for reordering */
     CmuxNotificationManager *notification_manager;  /* D-Bus notification manager */
+    gboolean focus_mode;  /* Focus mode - hides sidebar and browser for distraction-free coding */
+    gboolean sidebar_visible_before_focus;  /* Store sidebar state before focus mode */
+    gboolean browser_visible_before_focus;  /* Store browser state before focus mode */
     /* Notification tracking (VAL-NOTIF-003, VAL-NOTIF-004) */
     PendingNotification pending_notifications[MAX_PENDING_NOTIFICATIONS];
     guint pending_notification_count;
@@ -111,11 +119,12 @@ static void add_notification(AppState *state, guint workspace_id, const gchar *t
 static void clear_notification(AppState *state, guint notification_id);
 static void clear_all_notifications_for_workspace(AppState *state, guint workspace_id);
 static guint get_unread_notification_count(AppState *state, guint workspace_id);
+static void refresh_notification_panel(AppState *state);
 static void create_notification_panel(AppState *state);
+static void on_notification_item_clicked(GtkWidget *widget, gpointer user_data);
 static void toggle_notification_panel(AppState *state);
 static void toggle_sidebar(AppState *state);
 static void toggle_window_decorations(AppState *state);
-static void refresh_notification_panel(AppState *state);
 
 /* Forward declarations for browser functions (VAL-BROWSER-001, VAL-BROWSER-002, VAL-BROWSER-003, VAL-BROWSER-005) */
 static void toggle_browser(AppState *state);
@@ -126,6 +135,12 @@ static void on_tab_button_clicked(GtkButton *button, gpointer user_data);
 static void on_tab_close_clicked(GtkButton *button, gpointer user_data);
 static void update_browser_tab_bar(AppState *state);
 static void show_shortcuts_help(AppState *state);
+static void rename_active_workspace(AppState *state);
+static void on_terminal_attention(gpointer user_data);
+static void set_workspace_notification_ring(AppState *state, guint workspace_id, gboolean has_ring);
+static void prompt_new_workspace_with_worktree(AppState *state);
+static guint create_new_workspace_with_worktree(AppState *state, const gchar *task_name);
+static void toggle_focus_mode(AppState *state);
 /* Get current working directory */
 static gchar*
 get_current_cwd(void)
@@ -187,6 +202,7 @@ create_workspace(guint id, const gchar *name, const gchar *cwd)
     ws->name = g_strdup(name);
     ws->cwd = g_strdup(cwd);
     ws->git_branch = detect_git_branch(cwd);
+    ws->worktree_path = NULL;  /* No worktree initially */
     ws->notification_count = 0;
     ws->is_active = FALSE;
     ws->has_notification_ring = FALSE;  /* No notification ring initially */
@@ -423,11 +439,18 @@ create_sidebar_item(WorkspaceData *ws, AppState *state, guint index)
         gtk_box_append(GTK_BOX(label_box), git_label);
     }
     
-    /* Notification badge */
+    /* Notification badge (count) */
     if (ws->notification_count > 0) {
         badge = gtk_label_new(g_strdup_printf("%u", ws->notification_count));
         gtk_widget_add_css_class(badge, "notification-badge");
         gtk_box_append(GTK_BOX(item_box), badge);
+    }
+    
+    /* Notification ring indicator (blue dot for attention) */
+    if (ws->has_notification_ring) {
+        GtkWidget *ring_indicator = gtk_image_new_from_icon_name("dialog-information");
+        gtk_widget_add_css_class(ring_indicator, "notification-ring-indicator");
+        gtk_box_append(GTK_BOX(item_box), ring_indicator);
     }
     
     /* Keyboard shortcut hint (Cmd+1 through Cmd+9 based on index) */
@@ -499,6 +522,18 @@ create_sidebar_item(WorkspaceData *ws, AppState *state, guint index)
         ".notification-badge:hover {"
         "  transform: scale(1.15);"
         "  animation: none;"
+        "}"
+        ".notification-ring-indicator {"
+        "  color: #00aaff;"
+        "  animation: ring-pulse 1.5s ease-in-out infinite;"
+        "}"
+        "@keyframes ring-pulse {"
+        "  0%, 100% { opacity: 1; transform: scale(1); }"
+        "  50% { opacity: 0.6; transform: scale(0.85); }"
+        "}"
+        ".dim-label {"
+        "  color: #666666;"
+        "  font-size: 0.8em;"
         "}"
         ".shortcut-hint {"
         "  color: #444444;"
@@ -585,7 +620,98 @@ add_workspace(AppState *state, guint id, const gchar *name, const gchar *cwd)
             name, id, cwd, ws->git_branch ? ws->git_branch : "none");
 }
 
-/* Create new workspace */
+/* Create new workspace with worktree isolation */
+static guint
+create_new_workspace_with_worktree(AppState *state, const gchar *task_name)
+{
+    guint id = state->next_workspace_id++;
+    gchar *cwd = get_current_cwd();
+    
+    /* Try to create a git worktree for isolation */
+    gchar *worktree_path = NULL;
+    gchar *branch_name = NULL;
+    gboolean worktree_created = FALSE;
+    
+    if (task_name && strlen(task_name) > 0 && g_file_test(cwd, G_FILE_TEST_IS_DIR)) {
+        /* Check if we're in a git repository */
+        gchar *git_dir = g_build_filename(cwd, ".git", NULL);
+        if (g_file_test(git_dir, G_FILE_TEST_IS_DIR)) {
+            g_free(git_dir);
+            
+            /* Create worktree path */
+            gchar *parent_dir = g_path_get_dirname(cwd);
+            worktree_path = g_build_filename(parent_dir, task_name, NULL);
+            branch_name = g_strdup_printf("ws-%s", task_name);
+            
+            /* Run: git worktree add <path> -b <branch> */
+            gchar *cmd = g_strdup_printf("git worktree add \"%s\" -b \"%s\" 2>&1", 
+                                         worktree_path, branch_name);
+            g_print("Creating worktree: %s\n", cmd);
+            
+            FILE *fp = popen(cmd, "r");
+            if (fp) {
+                char buf[256];
+                g_string_append_printf(g_string_new(NULL), "Worktree output: ");
+                while (fgets(buf, sizeof(buf), fp) != NULL) {
+                    g_print("  %s", buf);
+                }
+                int status = pclose(fp);
+                if (status == 0) {
+                    worktree_created = TRUE;
+                    g_print("Worktree created successfully: %s\n", worktree_path);
+                } else {
+                    g_warning("Failed to create worktree (exit status %d)", status);
+                    g_free(worktree_path);
+                    g_free(branch_name);
+                    worktree_path = NULL;
+                    branch_name = NULL;
+                }
+            }
+            g_free(cmd);
+            g_free(parent_dir);
+        } else {
+            g_free(git_dir);
+            g_print("Not in a git repository, using current directory\n");
+        }
+    }
+    
+    /* Use worktree path if created, otherwise use current directory */
+    gchar *workspace_cwd = worktree_path ? worktree_path : g_strdup(cwd);
+    gchar *name = g_strdup_printf("Workspace %u", id);
+    if (worktree_created && task_name) {
+        g_free(name);
+        name = g_strdup(task_name);
+    }
+    
+    /* Create the workspace */
+    add_workspace(state, id, name, workspace_cwd);
+    
+    /* Update worktree info if created */
+    if (worktree_created) {
+        for (guint i = 0; i < state->workspace_count; i++) {
+            if (state->workspaces[i].id == id) {
+                g_free(state->workspaces[i].worktree_path);
+                state->workspaces[i].worktree_path = g_strdup(worktree_path);
+                g_free(state->workspaces[i].git_branch);
+                state->workspaces[i].git_branch = g_strdup(branch_name);
+                break;
+            }
+        }
+    }
+    
+    state->active_workspace_id = id;
+    refresh_sidebar(state);
+    
+    g_free(name);
+    g_free(cwd);
+    g_free(workspace_cwd);
+    g_free(worktree_path);
+    g_free(branch_name);
+    
+    return id;
+}
+
+/* Create new workspace (simple mode - no worktree) */
 static guint
 create_new_workspace(AppState *state)
 {
@@ -602,6 +728,103 @@ create_new_workspace(AppState *state)
     g_free(cwd);
     
     return id;
+}
+
+/* Dialog response callback for worktree creation */
+static void
+on_worktree_dialog_response(GtkDialog *dialog, gint response_id, gpointer user_data)
+{
+    AppState *state = (AppState *)user_data;
+    if (response_id == GTK_RESPONSE_OK) {
+        GtkWidget *entry = g_object_get_data(G_OBJECT(dialog), "entry");
+        const gchar *task_name = gtk_editable_get_text(GTK_EDITABLE(entry));
+        if (task_name && strlen(task_name) > 0) {
+            create_new_workspace_with_worktree(state, task_name);
+        } else {
+            /* Fallback to simple workspace creation */
+            create_new_workspace(state);
+        }
+    } else {
+        /* Cancelled - do nothing */
+    }
+    gtk_window_destroy(GTK_WINDOW(dialog));
+}
+
+/* Prompt for task name to create worktree-isolated workspace */
+static void
+prompt_new_workspace_with_worktree(AppState *state)
+{
+    GtkWidget *dialog = gtk_dialog_new_with_buttons(
+        "Create Isolated Workspace",
+        GTK_WINDOW(state->window),
+        GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT,
+        "Cancel", GTK_RESPONSE_CANCEL,
+        "Create", GTK_RESPONSE_OK,
+        NULL);
+    
+    GtkWidget *content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
+    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 12);
+    gtk_widget_set_margin_start(box, 20);
+    gtk_widget_set_margin_end(box, 20);
+    gtk_widget_set_margin_top(box, 20);
+    gtk_box_append(GTK_BOX(content), box);
+    
+    GtkWidget *label = gtk_label_new("Enter task name for isolated workspace:");
+    gtk_widget_set_halign(label, GTK_ALIGN_START);
+    gtk_box_append(GTK_BOX(box), label);
+    
+    GtkWidget *entry = gtk_entry_new();
+    gtk_entry_set_placeholder_text(GTK_ENTRY(entry), "e.g., feature-auth, bugfix-123");
+    gtk_box_append(GTK_BOX(box), entry);
+    g_object_set_data(G_OBJECT(dialog), "entry", entry);
+    
+    GtkWidget *hint = gtk_label_new("A git worktree will be created to isolate this workspace");
+    gtk_widget_set_halign(hint, GTK_ALIGN_START);
+    gtk_label_set_wrap(GTK_LABEL(hint), TRUE);
+    gtk_widget_add_css_class(hint, "dim-label");
+    gtk_box_append(GTK_BOX(box), hint);
+    
+    g_signal_connect(dialog, "response", G_CALLBACK(on_worktree_dialog_response), state);
+    
+    gtk_window_set_default_size(GTK_WINDOW(dialog), 350, -1);
+    gtk_widget_set_visible(dialog, TRUE);
+    gtk_widget_grab_focus(entry);
+}
+
+/* Toggle focus mode - hides sidebar and browser for distraction-free coding */
+static void
+toggle_focus_mode(AppState *state)
+{
+    if (!state) return;
+    
+    state->focus_mode = !state->focus_mode;
+    
+    if (state->focus_mode) {
+        /* Entering focus mode - store current visibility and hide */
+        state->sidebar_visible_before_focus = state->sidebar_visible;
+        state->browser_visible_before_focus = state->browser_visible;
+        
+        /* Hide sidebar */
+        if (state->sidebar_paned && state->sidebar_visible) {
+            gtk_paned_set_position(GTK_PANED(state->sidebar_paned), 0);
+            state->sidebar_visible = FALSE;
+        }
+        
+        /* Hide browser if visible */
+        if (state->browser_visible && state->browser_manager) {
+            close_browser_split(state);
+        }
+        
+        g_print("Focus mode ON - sidebar and browser hidden\n");
+    } else {
+        /* Exiting focus mode - restore previous visibility */
+        if (state->sidebar_paned && !state->sidebar_visible) {
+            gtk_paned_set_position(GTK_PANED(state->sidebar_paned), 220);  /* Default sidebar width */
+            state->sidebar_visible = state->sidebar_visible_before_focus;
+        }
+        
+        g_print("Focus mode OFF - sidebar and browser restored\n");
+    }
 }
 
 /* Update workspace notification badge */
@@ -653,6 +876,22 @@ add_demo_notification_timeout2(gpointer user_data)
     }
     
     return G_SOURCE_REMOVE;  /* Don't repeat */
+}
+
+/* OSC 777 / Bell attention callback - triggers Ring of Fire */
+static void
+on_terminal_attention(gpointer user_data)
+{
+    AppState *state = (AppState *)user_data;
+    if (!state || state->active_workspace_id == 0) return;
+    
+    /* Trigger the notification ring on the active workspace */
+    set_workspace_notification_ring(state, state->active_workspace_id, TRUE);
+    g_print("OSC 777 / Bell: Ring of Fire triggered for workspace %u\n", 
+            state->active_workspace_id);
+    
+    /* Update sidebar to show notification indicator */
+    refresh_sidebar(state);
 }
 
 /* Set notification ring for a workspace (VAL-NOTIF-002) */
@@ -826,10 +1065,6 @@ mark_all_notifications_read(AppState *state)
         refresh_notification_panel(state);
     }
 }
-
-/* ============================================================================
- * Notification Panel UI (VAL-NOTIF-004)
- * ============================================================================ */
 
 /* Notification panel item clicked - switch to workspace and clear notification */
 static void
@@ -1124,141 +1359,87 @@ toggle_sidebar(AppState *state)
 static void
 toggle_window_decorations(AppState *state)
 {
-    if (state->window == NULL) {
-        return;
-    }
-    
-    /* Toggle decorations by setting titlebar to NULL or recreating it */
-    static gboolean decorations_hidden = FALSE;
-    decorations_hidden = !decorations_hidden;
-    
-    if (decorations_hidden) {
-        /* Hide titlebar - use SDL-style or just hide headerbar */
-        gtk_window_set_titlebar(GTK_WINDOW(state->window), NULL);
-        gtk_window_set_decorated(GTK_WINDOW(state->window), FALSE);
-        g_print("Window decorations hidden (Kitty-style)\n");
-    } else {
-        /* Show titlebar again */
-        GtkWidget *headerbar = gtk_header_bar_new();
-        gtk_header_bar_set_show_title_buttons(GTK_HEADER_BAR(headerbar), TRUE);
-        gtk_widget_add_css_class(headerbar, "titlebar");
-        gtk_window_set_title(GTK_WINDOW(state->window), "cmux-linux");
-        gtk_window_set_titlebar(GTK_WINDOW(state->window), headerbar);
-        gtk_window_set_decorated(GTK_WINDOW(state->window), TRUE);
-        g_print("Window decorations shown\n");
-    }
+    window_toggle_decorations(GTK_WINDOW(state->window), "cmux-linux");
 }
 
 /* Show keyboard shortcuts help dialog */
 static void
 show_shortcuts_help(AppState *state)
 {
+    shortcuts_help_show(GTK_WINDOW(state->window));
+}
+
+/* Rename active workspace */
+static void
+rename_active_workspace_response(GtkDialog *dialog, gint response_id, gpointer user_data)
+{
+    if (response_id == GTK_RESPONSE_OK) {
+        AppState *state = (AppState *)user_data;
+        GtkWidget *entry = g_object_get_data(G_OBJECT(dialog), "entry");
+        const gchar *new_name = gtk_editable_get_text(GTK_EDITABLE(entry));
+        
+        if (state->active_workspace_id > 0 && new_name && strlen(new_name) > 0) {
+            for (guint i = 0; i < state->workspace_count; i++) {
+                if (state->workspaces[i].id == state->active_workspace_id) {
+                    g_free(state->workspaces[i].name);
+                    state->workspaces[i].name = g_strdup(new_name);
+                    refresh_sidebar(state);
+                    g_print("Workspace renamed to: %s\n", new_name);
+                    break;
+                }
+            }
+        }
+    }
+    gtk_window_destroy(GTK_WINDOW(dialog));
+}
+
+static void
+rename_active_workspace(AppState *state)
+{
+    if (state->active_workspace_id == 0) return;
+    
+    /* Find current name */
+    gchar *current_name = NULL;
+    for (guint i = 0; i < state->workspace_count; i++) {
+        if (state->workspaces[i].id == state->active_workspace_id) {
+            current_name = g_strdup(state->workspaces[i].name);
+            break;
+        }
+    }
+    if (!current_name) return;
+    
     GtkWidget *dialog = gtk_dialog_new_with_buttons(
-        "Keyboard Shortcuts",
+        "Rename Workspace",
         GTK_WINDOW(state->window),
         GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT,
-        "Close", GTK_RESPONSE_CLOSE,
+        "Cancel", GTK_RESPONSE_CANCEL,
+        "Rename", GTK_RESPONSE_OK,
         NULL);
     
-    gtk_window_set_default_size(GTK_WINDOW(dialog), 450, 500);
-    
-    GtkWidget *content_area = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
+    GtkWidget *content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
     GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 12);
     gtk_widget_set_margin_start(box, 20);
     gtk_widget_set_margin_end(box, 20);
     gtk_widget_set_margin_top(box, 20);
-    gtk_widget_set_margin_bottom(box, 20);
-    gtk_box_append(GTK_BOX(content_area), box);
+    gtk_box_append(GTK_BOX(content), box);
     
-    /* Header */
-    GtkWidget *header = gtk_label_new("<b>Keyboard Shortcuts</b>");
-    gtk_label_set_use_markup(GTK_LABEL(header), TRUE);
-    gtk_widget_set_halign(header, GTK_ALIGN_START);
-    gtk_box_append(GTK_BOX(box), header);
+    GtkWidget *label = gtk_label_new("Enter new workspace name:");
+    gtk_widget_set_halign(label, GTK_ALIGN_START);
+    gtk_box_append(GTK_BOX(box), label);
     
-    /* Workspaces section */
-    GtkWidget *ws_label = gtk_label_new(NULL);
-    gtk_label_set_markup(GTK_LABEL(ws_label), "<b>Workspaces</b>");
-    gtk_widget_set_halign(ws_label, GTK_ALIGN_START);
-    gtk_widget_set_margin_top(ws_label, 12);
-    gtk_box_append(GTK_BOX(box), ws_label);
+    GtkWidget *entry = gtk_entry_new();
+    gtk_editable_set_text(GTK_EDITABLE(entry), current_name);
+    gtk_editable_select_region(GTK_EDITABLE(entry), 0, -1);
+    gtk_box_append(GTK_BOX(box), entry);
+    g_object_set_data(G_OBJECT(dialog), "entry", entry);
     
-    const char *ws_shortcuts[] = {
-        "Ctrl+Shift+T   New workspace",
-        "Ctrl+Tab       Next workspace",
-        "Ctrl+Shift+Tab  Previous workspace",
-        "Ctrl+W         Close workspace",
-        "1-9            Switch to workspace (Cmd+1-9)",
-        NULL
-    };
-    for (guint i = 0; ws_shortcuts[i] != NULL; i++) {
-        GtkWidget *lbl = gtk_label_new(ws_shortcuts[i]);
-        gtk_widget_set_halign(lbl, GTK_ALIGN_START);
-        gtk_widget_add_css_class(lbl, "shortcut-item");
-        gtk_box_append(GTK_BOX(box), lbl);
-    }
+    g_signal_connect(dialog, "response", G_CALLBACK(rename_active_workspace_response), state);
     
-    /* View section */
-    GtkWidget *view_label = gtk_label_new(NULL);
-    gtk_label_set_markup(GTK_LABEL(view_label), "<b>View</b>");
-    gtk_widget_set_halign(view_label, GTK_ALIGN_START);
-    gtk_widget_set_margin_top(view_label, 12);
-    gtk_box_append(GTK_BOX(box), view_label);
-    
-    const char *view_shortcuts[] = {
-        "Ctrl+Shift+S   Toggle sidebar",
-        "Ctrl+Shift+D   Toggle decorations (Kitty)",
-        "Ctrl+Shift+N   Toggle notification panel",
-        "Ctrl+Shift+B   Toggle browser",
-        "Ctrl+Shift+H   Browser horizontal split",
-        "Ctrl+Shift+V   Browser vertical split",
-        "?              Show this help",
-        "Ctrl+Q         Quit",
-        NULL
-    };
-    for (guint i = 0; view_shortcuts[i] != NULL; i++) {
-        GtkWidget *lbl = gtk_label_new(view_shortcuts[i]);
-        gtk_widget_set_halign(lbl, GTK_ALIGN_START);
-        gtk_widget_add_css_class(lbl, "shortcut-item");
-        gtk_box_append(GTK_BOX(box), lbl);
-    }
-    
-    /* Notifications section */
-    GtkWidget *notif_label = gtk_label_new(NULL);
-    gtk_label_set_markup(GTK_LABEL(notif_label), "<b>Notifications</b>");
-    gtk_widget_set_halign(notif_label, GTK_ALIGN_START);
-    gtk_widget_set_margin_top(notif_label, 12);
-    gtk_box_append(GTK_BOX(box), notif_label);
-    
-    const char *notif_shortcuts[] = {
-        "Ctrl+Shift+R   Toggle notification ring",
-        "Ctrl+Shift+C   Clear notification rings",
-        NULL
-    };
-    for (guint i = 0; notif_shortcuts[i] != NULL; i++) {
-        GtkWidget *lbl = gtk_label_new(notif_shortcuts[i]);
-        gtk_widget_set_halign(lbl, GTK_ALIGN_START);
-        gtk_widget_add_css_class(lbl, "shortcut-item");
-        gtk_box_append(GTK_BOX(box), lbl);
-    }
-    
-    /* Add CSS for shortcut items */
-    GtkCssProvider *css = gtk_css_provider_new();
-    gtk_css_provider_load_from_string(css,
-        ".shortcut-item {"
-        "  font-family: monospace;"
-        "  font-size: 13px;"
-        "  padding: 2px 0;"
-        "}"
-    );
-    gtk_style_context_add_provider_for_display(
-        gdk_display_get_default(),
-        GTK_STYLE_PROVIDER(css),
-        GTK_STYLE_PROVIDER_PRIORITY_APPLICATION
-    );
-    
-    g_signal_connect_swapped(dialog, "response", G_CALLBACK(gtk_window_destroy), dialog);
+    gtk_window_set_default_size(GTK_WINDOW(dialog), 300, -1);
     gtk_widget_set_visible(dialog, TRUE);
+    
+    gtk_widget_grab_focus(entry);
+    g_free(current_name);
 }
 
 /* ============================================================================
@@ -1587,6 +1768,7 @@ close_workspace(AppState *state, guint workspace_id)
             g_free(ws->name);
             g_free(ws->cwd);
             g_free(ws->git_branch);
+            g_free(ws->worktree_path);
             
             /* Remove from array */
             for (guint j = i; j < state->workspace_count - 1; j++) {
@@ -1719,11 +1901,11 @@ on_key_pressed(GtkEventControllerKey *controller,
             (state & GDK_CONTROL_MASK) != 0,
             (state & GDK_SHIFT_MASK) != 0);
     
-    /* Ctrl+Shift+T: New workspace */
+    /* Ctrl+Shift+T: New workspace with worktree isolation */
     if ((state & GDK_CONTROL_MASK) && (state & GDK_SHIFT_MASK) && 
         (keyval == GDK_KEY_t || keyval == GDK_KEY_T)) {
         g_print("Shortcut matched: Ctrl+Shift+T\n");
-        create_new_workspace(state_app);
+        prompt_new_workspace_with_worktree(state_app);
         return TRUE;
     }
     
@@ -1767,19 +1949,10 @@ on_key_pressed(GtkEventControllerKey *controller,
         return TRUE;
     }
     
-    /* Ctrl+Shift+R: Toggle notification ring on active workspace (VAL-NOTIF-002) */
+    /* Ctrl+Shift+R: Rename active workspace */
     if ((state & GDK_CONTROL_MASK) && (state & GDK_SHIFT_MASK) && 
         (keyval == GDK_KEY_r || keyval == GDK_KEY_R)) {
-        if (state_app->active_workspace_id > 0) {
-            gboolean current_ring = FALSE;
-            for (guint i = 0; i < state_app->workspace_count; i++) {
-                if (state_app->workspaces[i].id == state_app->active_workspace_id) {
-                    current_ring = state_app->workspaces[i].has_notification_ring;
-                    break;
-                }
-            }
-            set_workspace_notification_ring(state_app, state_app->active_workspace_id, !current_ring);
-        }
+        rename_active_workspace(state_app);
         return TRUE;
     }
     
@@ -1816,6 +1989,13 @@ on_key_pressed(GtkEventControllerKey *controller,
     if ((state & GDK_CONTROL_MASK) && (state & GDK_SHIFT_MASK) && 
         (keyval == GDK_KEY_d || keyval == GDK_KEY_D)) {
         toggle_window_decorations(state_app);
+        return TRUE;
+    }
+    
+    /* Ctrl+Shift+F: Toggle focus mode */
+    if ((state & GDK_CONTROL_MASK) && (state & GDK_SHIFT_MASK) && 
+        (keyval == GDK_KEY_f || keyval == GDK_KEY_F)) {
+        toggle_focus_mode(state_app);
         return TRUE;
     }
     
@@ -2243,6 +2423,9 @@ activate(GtkApplication *app, gpointer user_data)
     AppState *state = (AppState *)user_data;
     GtkCssProvider *css_provider;
     
+    /* Initialize shared CSS */
+    lmux_css_init();
+    
     /* Create the main window */
     state->window = gtk_application_window_new(app);
     gtk_window_set_title(GTK_WINDOW(state->window), "cmux-linux");
@@ -2298,12 +2481,12 @@ activate(GtkApplication *app, gpointer user_data)
     state->terminal_view = vte_terminal_get_widget(term);
     state->terminal_data = term;
     
-    /* Set up keyboard controller for VTE widget to capture shortcuts before VTE processes them */
-    GtkEventController *terminal_key_controller = gtk_event_controller_key_new();
-    gtk_event_controller_set_propagation_phase(terminal_key_controller, GTK_PHASE_CAPTURE);
-    g_signal_connect(terminal_key_controller, "key-pressed", G_CALLBACK(on_key_pressed), state);
-    /* Add to terminal widget directly to intercept keys before VTE */
-    gtk_widget_add_controller(state->terminal_view, terminal_key_controller);
+    /* Set up attention callback for OSC 777 (Ring of Fire) */
+    vte_terminal_set_attention_callback(term, on_terminal_attention, state);
+    
+    /* Keyboard controller is already set up on window at ACTIVE phase above */
+    /* No need for separate terminal controller - let VTE handle terminal input naturally */
+    /* The window-level controller will intercept our shortcuts before they reach VTE */
     
     gtk_frame_set_child(GTK_FRAME(state->terminal_container), state->terminal_view);
     gtk_box_append(GTK_BOX(content), state->terminal_container);
@@ -2413,12 +2596,13 @@ activate(GtkApplication *app, gpointer user_data)
         "  background: #444444;"
         "}"
         
-        /* Notification ring - sky blue, subtle */
+        /* Notification ring - glowing blue "Ring of Fire" */
         ".notification-ring {"
-        "  border: 2px solid #87ceeb;"
-        "  border-radius: 4px;"
+        "  border: 2px solid #00aaff;"
+        "  border-radius: 6px;"
         "  background: #000000;"
-        "  transition: border-color 0.3s ease, border-width 0.3s ease;"
+        "  box-shadow: 0 0 15px #00aaff, 0 0 30px #00aaff40, inset 0 0 10px #00aaff20;"
+        "  transition: box-shadow 0.3s ease, border-color 0.3s ease;"
         "}"
         
         /* ========== Terminal (Kitty-style) ========== */
@@ -2771,6 +2955,11 @@ main(int argc, char **argv)
     state->drag_source_index = 0xFFFFFFFF;  /* Invalid index - no drag in progress */
     /* Initialize notification tracking (VAL-NOTIF-003, VAL-NOTIF-004) */
     state->pending_notification_count = 0;
+    
+    /* Initialize focus mode */
+    state->focus_mode = FALSE;
+    state->sidebar_visible_before_focus = TRUE;
+    state->browser_visible_before_focus = FALSE;
     state->next_notification_id = 1;
     state->notification_panel = NULL;
     /* Initialize sidebar paned (set in activate) */
