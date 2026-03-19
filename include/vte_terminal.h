@@ -24,9 +24,11 @@ typedef struct {
     GtkWidget *scrollbar;    /* Scrollbar for terminal */
     GtkWidget *container;    /* Container for terminal + scrollbar */
     GPid child_pid;          /* PID of the shell process */
-    char *working_directory; /* Current working directory */
+    char *working_directory; /* Current working directory - updated via OSC 7 */
     void (*attention_callback)(gpointer user_data);  /* OSC 777 callback */
     gpointer attention_data;  /* User data for callback */
+    void (*cwd_callback)(const char *cwd, gpointer user_data);  /* OSC 7 callback */
+    gpointer cwd_data;  /* User data for cwd callback */
 } VteTerminalData;
 
 /* Forward declarations */
@@ -415,6 +417,18 @@ vte_terminal_trigger_attention(VteTerminalData *term)
 {
     if (term && term->attention_callback) {
         term->attention_callback(term->attention_data);
+    }
+}
+
+/* Set cwd callback for OSC 7 (working directory tracking) */
+void
+vte_terminal_set_cwd_callback(VteTerminalData *term,
+                                void (*callback)(const char *cwd, gpointer),
+                                gpointer user_data)
+{
+    if (term) {
+        term->cwd_callback = callback;
+        term->cwd_data = user_data;
     }
 }
 
