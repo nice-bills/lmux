@@ -217,13 +217,14 @@ on_vte_click_pressed(GtkGestureClick *gesture, guint n_press, gdouble x, gdouble
     guint button;
     g_object_get(G_OBJECT(gesture), "button", &button, NULL);
     
+    g_print("VTE click: n_press=%u button=%u x=%f y=%f\n", n_press, button, x, y);
+    
     if (n_press != 1 || button != GDK_BUTTON_SECONDARY) {
         return;
     }
 
     /* Create a popover menu with Copy, Paste, Select All */
     GtkWidget *popover = gtk_popover_new();
-    gtk_widget_set_parent(popover, term->terminal);
     
     /* Create a box for menu items */
     GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
@@ -252,11 +253,16 @@ on_vte_click_pressed(GtkGestureClick *gesture, guint n_press, gdouble x, gdouble
     gtk_box_append(GTK_BOX(box), select_all_btn);
     
     /* Set position relative to click point */
-    GdkRectangle rect = {(int)x, (int)y, 0, 0};
+    GdkRectangle rect = {(int)x, (int)y, 1, 1};
     gtk_popover_set_pointing_to(GTK_POPOVER(popover), &rect);
+    
+    /* Set as child of terminal (this positions it relative to terminal) */
+    gtk_widget_set_parent(popover, term->terminal);
     
     /* Show the popover */
     gtk_popover_popup(GTK_POPOVER(popover));
+    
+    g_print("VTE context menu shown\n");
 }
 
 /* Create terminal widget using VTE */
