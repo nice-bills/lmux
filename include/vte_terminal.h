@@ -432,6 +432,34 @@ vte_terminal_set_cwd_callback(VteTerminalData *term,
     }
 }
 
+/* Simple percent-decode helper */
+static char*
+percent_decode(const char *str)
+{
+    if (!str) return g_strdup("");
+    
+    GString *decoded = g_string_new("");
+    for (const char *p = str; *p; p++) {
+        if (*p == '%' && p[1] && p[2]) {
+            /* Decode percent-encoded */
+            char hex[3] = {p[1], p[2], 0};
+            char *end;
+            guint8 c = strtol(hex, &end, 16);
+            if (*end == 0) {
+                g_string_append_c(decoded, (char)c);
+                p += 2;
+            } else {
+                g_string_append_c(decoded, *p);
+            }
+        } else if (*p == '+') {
+            g_string_append_c(decoded, ' ');  /* + is space in query strings */
+        } else {
+            g_string_append_c(decoded, *p);
+        }
+    }
+    return g_string_free(decoded, FALSE);
+}
+
 /* Update cwd from OSC 7 termprop - call periodically or on cwd change signal */
 gboolean
 vte_terminal_update_cwd(VteTerminalData *term)
@@ -446,7 +474,7 @@ vte_terminal_update_cwd(VteTerminalData *term)
         const char *path = g_uri_get_path(uri);
         if (path && path[0]) {
             /* Decode percent-encoded characters */
-            char *decoded = g_uri_decode_string(path);
+            char *decoded = percent_decode(path);
             
             /* Update stored cwd */
             g_free(term->working_directory);

@@ -970,9 +970,9 @@ static const gchar *DOM_SCRIPT =
     "  return JSON.stringify(result);"
     "})()";
 
-/* Callback for JavaScript execution - extracts DOM */
+/* Callback for JavaScript execution - extracts DOM (WebKitGTK 6.0 API) */
 static void
-on_dom_js_finished(WebKitWebView *web_view, GAsyncResult *result, gpointer user_data)
+on_dom_js_finished(GObject *source, GAsyncResult *result, gpointer user_data)
 {
     BrowserInstance *instance = user_data;
     if (!instance) return;
@@ -980,23 +980,20 @@ on_dom_js_finished(WebKitWebView *web_view, GAsyncResult *result, gpointer user_
     g_mutex_lock(&instance->dom_mutex);
     
     GError *error = NULL;
-    WebKitJavascriptResult *js_result = webkit_web_view_run_javascript_finish(web_view, result, &error);
+    JSCValue *value = webkit_web_view_evaluate_javascript_finish(
+        WEBKIT_WEB_VIEW(source), result, &error);
     
-    if (js_result) {
-        JSCValue *value = webkit_javascript_result_get_js_value(js_result);
-        if (JSC_IS_VALUE(value)) {
-            gchar *json_str = jsc_value_to_json(value, 0);
-            if (json_str) {
-                /* Parse and reformat for cleaner output */
-                instance->pending_dom_result = g_strdup(json_str);
-                g_free(json_str);
-            }
+    if (value && JSC_IS_VALUE(value)) {
+        gchar *json_str = jsc_value_to_json(value, 0);
+        if (json_str) {
+            instance->pending_dom_result = g_strdup(json_str);
+            g_free(json_str);
         }
-        webkit_javascript_result_unref(js_result);
+        g_object_unref(value);
     } else if (error) {
         g_printerr("DOM JS error: %s\n", error->message);
-        g_error_free(error);
         instance->pending_dom_result = g_strdup_printf("{\"error\":\"%s\"}", error->message);
+        g_error_free(error);
     }
     
     instance->dom_pending = FALSE;
@@ -1019,11 +1016,12 @@ cmux_browser_get_dom(BrowserInstance *instance)
     g_free(instance->pending_dom_result);
     instance->pending_dom_result = NULL;
     
-    /* Execute JavaScript to extract DOM */
-    webkit_web_view_run_javascript(
+    /* Execute JavaScript to extract DOM using WebKitGTK 6.0 API */
+    webkit_web_view_evaluate_javascript(
         WEBKIT_WEB_VIEW(instance->web_view),
-        DOM_SCRIPT,
-        NULL,
+        DOM_SCRIPT, strlen(DOM_SCRIPT),
+        NULL, NULL,  /* world_name, source_uri */
+        NULL,  /* cancellable */
         on_dom_js_finished,
         instance
     );
