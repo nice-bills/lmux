@@ -75,7 +75,7 @@ echo "  Built: ./lmuxd"
 # ============================================================
 # Build lmux (GUI client)
 # ============================================================
-SOURCES="src/main_gui.c src/vte_terminal.h src/browser.c src/notification.c src/workspace_commands.c src/terminal_commands.c src/focus_commands.c src/session_persistence.c src/lmux_css.c src/shortcuts_help.c src/workspace_dialogs.c src/window_decorations.c src/socket_server.c"
+SOURCES="src/main_gui.c src/vte_terminal.h src/browser.c src/notification.c src/workspace_commands.c src/terminal_commands.c src/focus_commands.c src/session_persistence.c src/lmux_css.c src/shortcuts_help.c src/workspace_dialogs.c src/window_decorations.c src/socket_server.c src/settings.c"
 
 # Add ghostty terminal if available
 if [ -n "$GHOSTTY_CFLAGS" ]; then

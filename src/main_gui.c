@@ -31,6 +31,7 @@
 #include "session_persistence.h"
 #include "vte_terminal.h"
 #include "app_state.h"
+#include "settings.h"
 
 #define MAX_WORKSPACES 32
 
@@ -38,6 +39,9 @@
 struct _AppState {
     /* GTK Application */
     GtkApplication *app;
+    
+    /* Settings */
+    LmuxSettings *settings;
     
     /* Windowed mode (Niri-native) */
     gboolean windowed_mode;
@@ -219,6 +223,14 @@ on_close_button_clicked(GtkWidget *widget, gpointer user_data)
             g_print("Cannot close last workspace - at least one must remain\n");
         }
     }
+}
+
+/* Settings button clicked - open settings dialog */
+static void
+on_settings_clicked(GtkWidget *widget, gpointer user_data)
+{
+    AppState *state = (AppState *)user_data;
+    lmux_settings_show_dialog(state->app, state->settings);
 }
 
 /* Window delete event handler - handles window close button (VAL-WIN-003) */
@@ -2554,6 +2566,12 @@ activate(GtkApplication *app, gpointer user_data)
     gtk_header_bar_set_show_title_buttons(GTK_HEADER_BAR(headerbar), TRUE);
     gtk_widget_add_css_class(headerbar, "titlebar");
     
+    /* Add settings button to header bar */
+    GtkWidget *settings_btn = gtk_button_new_from_icon_name("emblem-system-symbolic");
+    gtk_widget_set_tooltip_text(settings_btn, "Settings");
+    gtk_header_bar_pack_end(GTK_HEADER_BAR(headerbar), settings_btn);
+    g_signal_connect(settings_btn, "clicked", G_CALLBACK(on_settings_clicked), state);
+    
     /* Set window title and use headerbar as titlebar */
     gtk_window_set_title(GTK_WINDOW(state->window), "cmux-linux");
     gtk_window_set_titlebar(GTK_WINDOW(state->window), headerbar);
@@ -3006,6 +3024,10 @@ main(int argc, char **argv)
     } else {
         g_print("Warning: Failed to initialize notification system\n");
     }
+    
+    /* Initialize settings */
+    state->settings = lmux_settings_new();
+    lmux_settings_load(state->settings);
     
     /* Initialize state */
     state->next_workspace_id = 1;
