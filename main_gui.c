@@ -2609,12 +2609,9 @@ activate(GtkApplication *app, gpointer user_data)
     /* Set up attention callback for OSC 777 (Ring of Fire) */
     vte_terminal_set_attention_callback(term, on_terminal_attention, state);
     
-    /* Set up keyboard controller for VTE widget to capture shortcuts before VTE processes them */
-    GtkEventController *terminal_key_controller = gtk_event_controller_key_new();
-    gtk_event_controller_set_propagation_phase(terminal_key_controller, GTK_PHASE_CAPTURE);
-    g_signal_connect(terminal_key_controller, "key-pressed", G_CALLBACK(on_key_pressed), state);
-    /* Add to terminal widget directly to intercept keys before VTE */
-    gtk_widget_add_controller(state->terminal_view, terminal_key_controller);
+    /* Keyboard controller is already set up on window at ACTIVE phase above */
+    /* No need for separate terminal controller - let VTE handle terminal input naturally */
+    /* The window-level controller will intercept our shortcuts before they reach VTE */
     
     gtk_frame_set_child(GTK_FRAME(state->terminal_container), state->terminal_view);
     gtk_box_append(GTK_BOX(content), state->terminal_container);
