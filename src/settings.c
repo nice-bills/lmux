@@ -298,7 +298,7 @@ lmux_settings_show_dialog(GtkApplication *app, LmuxSettings *settings)
     
     /* Focus mode */
     GtkWidget *row5 = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-    GtkWidget *label5 = gtk_label_new("Focus mode (Ctrl+Shift+F)");
+    GtkWidget *label5 = gtk_label_new("Focus mode (Alt+Shift+F)");
     gtk_widget_set_hexpand(label5, TRUE);
     gtk_box_append(GTK_BOX(row5), label5);
     GtkWidget *sw5 = gtk_switch_new();

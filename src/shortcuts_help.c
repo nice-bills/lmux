@@ -40,11 +40,12 @@ shortcuts_help_show(GtkWindow *parent)
     gtk_box_append(GTK_BOX(box), ws_label);
     
     const char *ws_shortcuts[] = {
-        "Ctrl+Shift+T   New workspace",
-        "Ctrl+Tab       Next workspace",
-        "Ctrl+Shift+Tab  Previous workspace",
-        "Ctrl+W         Close workspace",
-        "Ctrl+Shift+R   Rename workspace",
+        "Alt+Shift+T    New worktree workspace",
+        "Alt+Shift+N    New workspace",
+        "Alt+Tab        Next workspace",
+        "Alt+Shift+Tab   Previous workspace",
+        "Alt+W          Close workspace",
+        "Alt+Shift+R    Rename workspace",
         "1-9            Switch to workspace",
         NULL
     };
@@ -63,15 +64,11 @@ shortcuts_help_show(GtkWindow *parent)
     gtk_box_append(GTK_BOX(box), view_label);
     
     const char *view_shortcuts[] = {
-        "Ctrl+Shift+S   Toggle sidebar",
-        "Ctrl+Shift+D   Toggle decorations",
-        "Ctrl+Shift+F   Focus mode",
-        "Ctrl+Shift+N   Toggle notification panel",
-        "Ctrl+Shift+B   Toggle browser",
-        "Ctrl+Shift+H   Browser horizontal split",
-        "Ctrl+Shift+V   Browser vertical split",
-        "?              Show this help",
-        "Ctrl+Q         Quit",
+        "Alt+Shift+S    Toggle sidebar",
+        "Alt+Shift+D    Toggle decorations",
+        "Alt+Shift+F    Focus mode",
+        "Alt+Shift+?    Show this help",
+        "Alt+Q          Quit",
         NULL
     };
     for (guint i = 0; view_shortcuts[i] != NULL; i++) {
@@ -89,8 +86,7 @@ shortcuts_help_show(GtkWindow *parent)
     gtk_box_append(GTK_BOX(box), notif_label);
     
     const char *notif_shortcuts[] = {
-        "Ctrl+Shift+R   Toggle notification ring",
-        "Ctrl+Shift+C   Clear notification rings",
+        "Alt+Shift+C    Clear notification rings",
         NULL
     };
     for (guint i = 0; notif_shortcuts[i] != NULL; i++) {

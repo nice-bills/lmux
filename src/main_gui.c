@@ -1952,21 +1952,21 @@ create_sidebar(AppState *state)
     GtkWidget *notif_btn = gtk_button_new_from_icon_name("dialog-information");
     gtk_button_set_has_frame(GTK_BUTTON(notif_btn), FALSE);
     g_signal_connect_swapped(notif_btn, "clicked", G_CALLBACK(toggle_notification_panel), state);
-    gtk_widget_set_tooltip_text(notif_btn, "Toggle Notification Panel (Ctrl+Shift+N)");
+    gtk_widget_set_tooltip_text(notif_btn, "Toggle Notification Panel (Alt+Shift+N)");
     gtk_box_append(GTK_BOX(header_box), notif_btn);
     
     /* Add browser toggle button (VAL-BROWSER-001) */
     GtkWidget *browser_btn = gtk_button_new_from_icon_name("web-browser-symbolic");
     gtk_button_set_has_frame(GTK_BUTTON(browser_btn), FALSE);
     g_signal_connect_swapped(browser_btn, "clicked", G_CALLBACK(toggle_browser), state);
-    gtk_widget_set_tooltip_text(browser_btn, "Toggle Browser (Ctrl+Shift+B)");
+    gtk_widget_set_tooltip_text(browser_btn, "Toggle Browser (Alt+Shift+B)");
     gtk_box_append(GTK_BOX(header_box), browser_btn);
     
     /* Add sidebar toggle button */
     GtkWidget *sidebar_toggle_btn = gtk_button_new_from_icon_name("sidebar-show-symbolic");
     gtk_button_set_has_frame(GTK_BUTTON(sidebar_toggle_btn), FALSE);
     g_signal_connect_swapped(sidebar_toggle_btn, "clicked", G_CALLBACK(toggle_sidebar), state);
-    gtk_widget_set_tooltip_text(sidebar_toggle_btn, "Toggle Sidebar (Ctrl+Shift+S)");
+    gtk_widget_set_tooltip_text(sidebar_toggle_btn, "Toggle Sidebar (Alt+Shift+S)");
     gtk_box_append(GTK_BOX(header_box), sidebar_toggle_btn);
     
     /* Add help button */
@@ -2108,15 +2108,15 @@ on_key_pressed(GtkEventControllerKey *controller,
         return TRUE;
     }
     
-    /* Ctrl+Shift+S: Toggle workspace sidebar */
-    if ((state & GDK_CONTROL_MASK) && (state & GDK_SHIFT_MASK) && 
+    /* Alt+Shift+S: Toggle workspace sidebar */
+    if ((state & GDK_ALT_MASK) && (state & GDK_SHIFT_MASK) && 
         (keyval == GDK_KEY_s || keyval == GDK_KEY_S)) {
         toggle_sidebar(state_app);
         return TRUE;
     }
     
-    /* Ctrl+Shift+D: Toggle window decorations (Kitty-style) */
-    if ((state & GDK_CONTROL_MASK) && (state & GDK_SHIFT_MASK) && 
+    /* Alt+Shift+D: Toggle window decorations (Kitty-style) */
+    if ((state & GDK_ALT_MASK) && (state & GDK_SHIFT_MASK) && 
         (keyval == GDK_KEY_d || keyval == GDK_KEY_D)) {
         toggle_window_decorations(state_app);
         return TRUE;
