@@ -1980,21 +1980,34 @@ on_key_pressed(GtkEventControllerKey *controller,
 {
     AppState *state_app = (AppState *)user_data;
     
-    g_print("Key pressed: keyval=0x%x state=0x%x ctrl=%d shift=%d\n", 
+    g_print("Key pressed: keyval=0x%x state=0x%x ctrl=%d shift=%d alt=%d\n", 
             keyval, state, 
             (state & GDK_CONTROL_MASK) != 0,
-            (state & GDK_SHIFT_MASK) != 0);
+            (state & GDK_SHIFT_MASK) != 0,
+            (state & GDK_ALT_MASK) != 0);
     
-    /* Ctrl+Shift+T: New workspace with worktree isolation */
-    if ((state & GDK_CONTROL_MASK) && (state & GDK_SHIFT_MASK) && 
+    /* NOTE: VTE consumes Ctrl+key combinations for terminal input.
+     * We use Alt+key instead for lmux shortcuts.
+     * Alt is not consumed by the terminal. */
+    
+    /* Alt+Shift+T: New workspace with worktree isolation */
+    if ((state & GDK_ALT_MASK) && (state & GDK_SHIFT_MASK) && 
         (keyval == GDK_KEY_t || keyval == GDK_KEY_T)) {
-        g_print("Shortcut matched: Ctrl+Shift+T\n");
+        g_print("Shortcut matched: Alt+Shift+T\n");
         prompt_new_workspace_with_worktree(state_app);
         return TRUE;
     }
     
-    /* Ctrl+Tab: Next workspace */
-    if ((state & GDK_CONTROL_MASK) && keyval == GDK_KEY_Tab) {
+    /* Alt+Shift+N: New workspace (simple) */
+    if ((state & GDK_ALT_MASK) && (state & GDK_SHIFT_MASK) && 
+        (keyval == GDK_KEY_n || keyval == GDK_KEY_N)) {
+        g_print("Shortcut matched: Alt+Shift+N\n");
+        create_new_workspace(state_app);
+        return TRUE;
+    }
+    
+    /* Alt+Tab: Next workspace */
+    if ((state & GDK_ALT_MASK) && keyval == GDK_KEY_Tab) {
         if (state_app->workspace_count > 0) {
             guint current_idx = 0;
             for (guint i = 0; i < state_app->workspace_count; i++) {
@@ -2009,8 +2022,8 @@ on_key_pressed(GtkEventControllerKey *controller,
         return TRUE;
     }
     
-    /* Ctrl+Shift+Tab: Previous workspace */
-    if ((state & GDK_CONTROL_MASK) && (state & GDK_SHIFT_MASK) && keyval == GDK_KEY_Tab) {
+    /* Alt+Shift+Tab: Previous workspace */
+    if ((state & GDK_ALT_MASK) && (state & GDK_SHIFT_MASK) && keyval == GDK_KEY_Tab) {
         if (state_app->workspace_count > 0) {
             guint current_idx = 0;
             for (guint i = 0; i < state_app->workspace_count; i++) {
@@ -2025,39 +2038,39 @@ on_key_pressed(GtkEventControllerKey *controller,
         return TRUE;
     }
     
-    /* Ctrl+W: Close workspace */
-    if ((state & GDK_CONTROL_MASK) && keyval == GDK_KEY_w) {
+    /* Alt+W: Close workspace */
+    if ((state & GDK_ALT_MASK) && keyval == GDK_KEY_w) {
         if (state_app->active_workspace_id > 0) {
             close_workspace(state_app, state_app->active_workspace_id);
         }
         return TRUE;
     }
     
-    /* Ctrl+Shift+R: Rename active workspace */
-    if ((state & GDK_CONTROL_MASK) && (state & GDK_SHIFT_MASK) && 
+    /* Alt+Shift+R: Rename active workspace */
+    if ((state & GDK_ALT_MASK) && (state & GDK_SHIFT_MASK) && 
         (keyval == GDK_KEY_r || keyval == GDK_KEY_R)) {
         rename_active_workspace(state_app);
         return TRUE;
     }
     
-    /* Ctrl+Shift+C: Clear all notification rings */
-    if ((state & GDK_CONTROL_MASK) && (state & GDK_SHIFT_MASK) && 
+    /* Alt+Shift+C: Clear all notification rings */
+    if ((state & GDK_ALT_MASK) && (state & GDK_SHIFT_MASK) && 
         (keyval == GDK_KEY_c || keyval == GDK_KEY_C)) {
         clear_all_notification_rings(state_app);
         return TRUE;
     }
     
-    /* Ctrl+Shift+N: Toggle notification panel (VAL-NOTIF-004) */
-    if ((state & GDK_CONTROL_MASK) && (state & GDK_SHIFT_MASK) && 
+    /* Alt+Shift+N: Toggle notification panel (VAL-NOTIF-004) */
+    if ((state & GDK_ALT_MASK) && (state & GDK_SHIFT_MASK) && 
         (keyval == GDK_KEY_n || keyval == GDK_KEY_N)) {
         toggle_notification_panel(state_app);
         return TRUE;
     }
     
-    /* Ctrl+Shift+B: Toggle browser (VAL-BROWSER-001, VAL-BROWSER-002, VAL-BROWSER-003) */
-    if ((state & GDK_CONTROL_MASK) && (state & GDK_SHIFT_MASK) && 
+    /* Alt+Shift+B: Toggle browser (VAL-BROWSER-001, VAL-BROWSER-002, VAL-BROWSER-003) */
+    if ((state & GDK_ALT_MASK) && (state & GDK_SHIFT_MASK) && 
         (keyval == GDK_KEY_b || keyval == GDK_KEY_B)) {
-        g_print("Shortcut matched: Ctrl+Shift+B - toggling browser\n");
+        g_print("Shortcut matched: Alt+Shift+B - toggling browser\n");
         toggle_browser(state_app);
         return TRUE;
     }
@@ -2076,22 +2089,22 @@ on_key_pressed(GtkEventControllerKey *controller,
         return TRUE;
     }
     
-    /* Ctrl+Shift+F: Toggle focus mode */
-    if ((state & GDK_CONTROL_MASK) && (state & GDK_SHIFT_MASK) && 
+    /* Alt+Shift+F: Toggle focus mode (zen mode) */
+    if ((state & GDK_ALT_MASK) && (state & GDK_SHIFT_MASK) && 
         (keyval == GDK_KEY_f || keyval == GDK_KEY_F)) {
         toggle_focus_mode(state_app);
         return TRUE;
     }
     
-    /* Ctrl+Shift+H: Open browser in horizontal split (VAL-BROWSER-002) */
-    if ((state & GDK_CONTROL_MASK) && (state & GDK_SHIFT_MASK) && 
+    /* Alt+Shift+H: Open browser in horizontal split (VAL-BROWSER-002) */
+    if ((state & GDK_ALT_MASK) && (state & GDK_SHIFT_MASK) && 
         (keyval == GDK_KEY_h || keyval == GDK_KEY_H)) {
         open_browser_split(state_app, BROWSER_SPLIT_HORIZONTAL);
         return TRUE;
     }
     
-    /* Ctrl+Shift+V: Open browser in vertical split (VAL-BROWSER-002) */
-    if ((state & GDK_CONTROL_MASK) && (state & GDK_SHIFT_MASK) && 
+    /* Alt+Shift+V: Open browser in vertical split (VAL-BROWSER-002) */
+    if ((state & GDK_ALT_MASK) && (state & GDK_SHIFT_MASK) && 
         (keyval == GDK_KEY_v || keyval == GDK_KEY_V)) {
         open_browser_split(state_app, BROWSER_SPLIT_VERTICAL);
         return TRUE;
@@ -2515,11 +2528,17 @@ activate(GtkApplication *app, gpointer user_data)
     gtk_window_set_title(GTK_WINDOW(state->window), "cmux-linux");
     gtk_window_set_default_size(GTK_WINDOW(state->window), 1200, 700);
     
-    /* Set up keyboard controller with improved event handling */
+    /* Set up keyboard controller for shortcuts - must intercept BEFORE VTE processes keys */
     GtkEventController *key_controller = gtk_event_controller_key_new();
     gtk_event_controller_set_propagation_phase(key_controller, GTK_PHASE_CAPTURE);
     g_signal_connect(key_controller, "key-pressed", G_CALLBACK(on_key_pressed), state);
     gtk_widget_add_controller(state->window, key_controller);
+    
+    /* Also intercept keys at terminal level to prevent VTE from consuming them */
+    GtkEventController *term_key_controller = gtk_event_controller_key_new();
+    gtk_event_controller_set_propagation_phase(term_key_controller, GTK_PHASE_CAPTURE);
+    g_signal_connect(term_key_controller, "key-pressed", G_CALLBACK(on_key_pressed), state);
+    /* Will be added after terminal is created */
     
     /* Set up window close handler (VAL-WIN-003) */
     g_signal_connect(state->window, "close-request", G_CALLBACK(on_window_close_requested), state);
@@ -2568,9 +2587,11 @@ activate(GtkApplication *app, gpointer user_data)
     /* Set up attention callback for OSC 777 (Ring of Fire) */
     vte_terminal_set_attention_callback(term, on_terminal_attention, state);
     
-    /* Keyboard controller is already set up on window at ACTIVE phase above */
-    /* No need for separate terminal controller - let VTE handle terminal input naturally */
-    /* The window-level controller will intercept our shortcuts before they reach VTE */
+    /* Add key controller directly to terminal to intercept shortcuts before VTE consumes them */
+    GtkEventController *term_key = gtk_event_controller_key_new();
+    gtk_event_controller_set_propagation_phase(term_key, GTK_PHASE_CAPTURE);
+    g_signal_connect(term_key, "key-pressed", G_CALLBACK(on_key_pressed), state);
+    gtk_widget_add_controller(state->terminal_view, term_key);
     
     gtk_frame_set_child(GTK_FRAME(state->terminal_container), state->terminal_view);
     gtk_box_append(GTK_BOX(content), state->terminal_container);
