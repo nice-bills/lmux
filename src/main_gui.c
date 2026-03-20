@@ -125,6 +125,7 @@ static void update_browser_tab_bar(AppState *state);
 static void show_shortcuts_help(AppState *state);
 static void rename_active_workspace(AppState *state);
 static void on_terminal_attention(gpointer user_data);
+static void on_terminal_right_click(GtkGestureClick *gesture, int n_press, double x, double y, gpointer user_data);
 static void set_workspace_notification_ring(AppState *state, guint workspace_id, gboolean has_ring);
 static void prompt_new_workspace_with_worktree(AppState *state);
 static guint create_new_workspace_with_worktree(AppState *state, const gchar *task_name);
@@ -927,6 +928,35 @@ on_terminal_attention(gpointer user_data)
     
     /* Update sidebar to show notification indicator */
     refresh_sidebar(state);
+}
+
+/* Right-click context menu for terminal (VAL-TERM-005) */
+static void
+on_terminal_right_click(GtkGestureClick *gesture, int n_press, double x, double y, gpointer user_data)
+{
+    if (n_press != 1) return;
+    
+    AppState *state = (AppState *)user_data;
+    
+    /* Create menu model using GMenu (GTK4 style) */
+    GMenu *menu = g_menu_new();
+    
+    g_menu_append(menu, "Copy", "terminal.copy");
+    g_menu_append(menu, "Paste", "terminal.paste");
+    g_menu_append(menu, "Select All", "terminal.select-all");
+    g_menu_append(menu, "_Clear Scrollback", "terminal.clear");
+    g_menu_append(menu, "_Reset Terminal", "terminal.reset");
+    g_menu_append(menu, "S_ettings...", "app.settings");
+    
+    /* Create popover menu */
+    GtkWidget *popover = gtk_popover_menu_new_from_model(G_MENU_MODEL(menu));
+    gtk_widget_set_parent(popover, gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(gesture)));
+    
+    /* Position at click coordinates */
+    gtk_popover_set_pointing_to(GTK_POPOVER(popover), &(GdkRectangle){(int)x, (int)y, 1, 1});
+    gtk_popover_popup(GTK_POPOVER(popover));
+    
+    g_object_unref(menu);
 }
 
 /* Set notification ring for a workspace (VAL-NOTIF-002) */
@@ -2592,6 +2622,12 @@ activate(GtkApplication *app, gpointer user_data)
     gtk_event_controller_set_propagation_phase(term_key, GTK_PHASE_CAPTURE);
     g_signal_connect(term_key, "key-pressed", G_CALLBACK(on_key_pressed), state);
     gtk_widget_add_controller(state->terminal_view, term_key);
+    
+    /* Add right-click menu handler for terminal (VAL-TERM-005) */
+    GtkGesture *right_click = gtk_gesture_click_new();
+    gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(right_click), GDK_BUTTON_SECONDARY);
+    g_signal_connect(right_click, "pressed", G_CALLBACK(on_terminal_right_click), state);
+    gtk_widget_add_controller(state->terminal_view, GTK_EVENT_CONTROLLER(right_click));
     
     gtk_frame_set_child(GTK_FRAME(state->terminal_container), state->terminal_view);
     gtk_box_append(GTK_BOX(content), state->terminal_container);
