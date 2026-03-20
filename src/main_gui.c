@@ -716,7 +716,10 @@ create_new_workspace_with_worktree(AppState *state, const gchar *task_name)
     
     g_free(name);
     g_free(cwd);
-    g_free(workspace_cwd);
+    /* Note: workspace_cwd may point to worktree_path, so only free worktree_path */
+    if (workspace_cwd != worktree_path) {
+        g_free(workspace_cwd);
+    }
     g_free(worktree_path);
     g_free(branch_name);
     
@@ -2122,6 +2125,7 @@ on_key_pressed(GtkEventControllerKey *controller,
     /* Alt+Shift+F: Toggle focus mode (zen mode) */
     if ((state & GDK_ALT_MASK) && (state & GDK_SHIFT_MASK) && 
         (keyval == GDK_KEY_f || keyval == GDK_KEY_F)) {
+        g_print("Shortcut matched: Alt+Shift+F\n");
         toggle_focus_mode(state_app);
         return TRUE;
     }
