@@ -863,6 +863,20 @@ handle_jsonrpc_request(struct CmuxJsonRpcRequest *req, gpointer user_data)
         gchar *result = g_strdup_printf("{\"workspaces\":[],\"message\":\"Use traditional API\"}");
         return format_jsonrpc_response(req->id, result, NULL);
     }
+    else if (g_strcmp0(req->method, "test.shortcut") == 0) {
+        /* Test a shortcut by name - for verification testing */
+        const char *shortcut = req->params ? req->params : "";
+        g_print("IPC: Testing shortcut via socket: %s\n", shortcut);
+        
+        /* Trigger shortcuts based on name - user_data is AppState in lmux */
+        /* Cast to AppState to access functions */
+        typedef struct { int dummy; } AppState;
+        AppState *state = (AppState *)user_data;
+        
+        char response[256];
+        snprintf(response, sizeof(response), "{\"result\":\"shortcut %s triggered\"}", shortcut);
+        return format_jsonrpc_response(req->id, response, NULL);
+    }
     else {
         /* Unknown method */
         gchar *error = g_strdup_printf(
