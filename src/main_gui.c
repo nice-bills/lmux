@@ -659,7 +659,7 @@ add_workspace(AppState *state, guint id, const gchar *name, const gchar *cwd)
             gtk_widget_set_visible(frame, ws->is_active);
             
             /* Set attention callback for OSC 777 */
-            LmuxVteTerminal *vte_data = (LmuxVteTerminal *)((TerminalBackendVte *)ws->terminal)->lmux_vte;
+            LmuxVteTerminal *vte_data = (LmuxVteTerminal *)ws->terminal->impl;
             vte_terminal_set_attention_callback(vte_data, on_terminal_attention, state);
             
             /* Create key controller to intercept keyboard shortcuts BEFORE VTE consumes them.
@@ -2717,7 +2717,7 @@ activate(GtkApplication *app, gpointer user_data)
     /* These APIs were removed in GTK4: gtk_widget_get_screen, gdk_screen_get_rgba_visual,
      * gtk_widget_set_visual, gtk_widget_set_app_paintable */
     /* For GTK4 transparency, CSS-based approaches are used instead */
-    g_signal_connect(state->window, "draw", G_CALLBACK(window_draw_transparency), NULL);
+    /* draw signal doesn't exist on GtkApplicationWindow in GTK4 - removed */
     
     /* Set up keyboard controller for shortcuts - must intercept BEFORE VTE processes keys */
     GtkEventController *key_controller = gtk_event_controller_key_new();
