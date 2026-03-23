@@ -13,7 +13,8 @@
 
 #include <gtk/gtk.h>
 
-typedef struct TerminalBackend TerminalBackend;
+/* Include terminal_backend.h for TerminalBackend type */
+#include "terminal_backend.h"
 
 /* ============================================================================
  * Constants
@@ -40,6 +41,7 @@ typedef struct {
     int master_fd;
     pid_t child_pid;
     TerminalBackend *terminal;
+    GtkWidget *terminal_container;  /* Frame wrapping the terminal widget */
 } WorkspaceData;
 
 /* ============================================================================

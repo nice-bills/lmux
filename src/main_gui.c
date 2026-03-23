@@ -130,6 +130,7 @@ static void set_workspace_notification_ring(AppState *state, guint workspace_id,
 static void prompt_new_workspace_with_worktree(AppState *state);
 static guint create_new_workspace_with_worktree(AppState *state, const gchar *task_name);
 static void toggle_focus_mode(AppState *state);
+static gboolean on_key_pressed(GtkEventControllerKey *controller, guint keyval, guint keycode, GdkModifierType state, gpointer user_data);
 /* Get current working directory */
 static gchar*
 get_current_cwd(void)
@@ -197,6 +198,8 @@ create_workspace(guint id, const gchar *name, const gchar *cwd)
     ws->has_notification_ring = FALSE;  /* No notification ring initially */
     ws->master_fd = -1;
     ws->child_pid = -1;
+    ws->terminal = NULL;  /* Terminal backend - created per-workspace */
+    ws->terminal_container = NULL;  /* Frame wrapping the terminal widget */
     return ws;
 }
 
@@ -617,6 +620,47 @@ add_workspace(AppState *state, guint id, const gchar *name, const gchar *cwd)
     if (!state->windowed_mode) {
         GtkWidget *item = create_sidebar_item(ws, state, idx);
         gtk_box_append(GTK_BOX(state->sidebar_box), item);
+        
+        /* Create terminal for this workspace */
+        ws->terminal = terminal_create(BACKEND_VTE);
+        if (ws->terminal) {
+            GtkWidget *term_widget = terminal_get_widget(ws->terminal);
+            
+            /* Create frame container for the terminal */
+            GtkWidget *frame = gtk_frame_new(NULL);
+            gtk_widget_set_hexpand(frame, TRUE);
+            gtk_widget_set_vexpand(frame, TRUE);
+            gtk_widget_add_css_class(frame, "terminal-frame");
+            gtk_frame_set_child(GTK_FRAME(frame), term_widget);
+            
+            /* Store frame in workspace for notification ring styling */
+            ws->terminal_container = frame;
+            
+            /* Add to content area */
+            gtk_box_append(GTK_BOX(state->terminal_area), frame);
+            
+            /* Initially hide non-active workspace terminals */
+            gtk_widget_set_visible(frame, ws->is_active);
+            
+            /* Set attention callback for OSC 777 */
+            VteTerminalData *vte_data = (VteTerminalData *)((TerminalBackendVte *)ws->terminal)->vte_data;
+            vte_terminal_set_attention_callback(vte_data, on_terminal_attention, state);
+            
+            /* Create key controller to intercept keyboard shortcuts BEFORE VTE consumes them.
+             * Adding to terminal_view (VTE widget) at CAPTURE phase should intercept first. */
+            GtkEventController *key_overlay = gtk_event_controller_key_new();
+            gtk_event_controller_set_propagation_phase(key_overlay, GTK_PHASE_CAPTURE);
+            g_signal_connect(key_overlay, "key-pressed", G_CALLBACK(on_key_pressed), state);
+            gtk_widget_add_controller(term_widget, key_overlay);
+            
+            /* Right-click menu handler for terminal (VAL-TERM-005) */
+            GtkGesture *right_click = gtk_gesture_click_new();
+            gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(right_click), GDK_BUTTON_SECONDARY);
+            g_signal_connect(right_click, "pressed", G_CALLBACK(on_terminal_right_click), state);
+            gtk_widget_add_controller(term_widget, GTK_EVENT_CONTROLLER(right_click));
+            
+            g_print("Created terminal for workspace %s\n", name);
+        }
     }
     
     g_print("Added workspace: %s (ID: %u, CWD: %s, Git: %s)\n", 
@@ -969,15 +1013,16 @@ set_workspace_notification_ring(AppState *state, guint workspace_id, gboolean ha
 {
     for (guint i = 0; i < state->workspace_count; i++) {
         if (state->workspaces[i].id == workspace_id) {
-            state->workspaces[i].has_notification_ring = has_ring;
+            WorkspaceData *ws = &state->workspaces[i];
+            ws->has_notification_ring = has_ring;
             
-            /* Update the visual ring on terminal container */
-            if (state->terminal_container != NULL) {
+            /* Update the visual ring on this workspace's terminal container */
+            if (ws->terminal_container != NULL) {
                 if (has_ring) {
-                    gtk_widget_add_css_class(state->terminal_container, "notification-ring");
+                    gtk_widget_add_css_class(ws->terminal_container, "notification-ring");
                     g_print("Notification ring enabled for workspace %u\n", workspace_id);
                 } else {
-                    gtk_widget_remove_css_class(state->terminal_container, "notification-ring");
+                    gtk_widget_remove_css_class(ws->terminal_container, "notification-ring");
                     g_print("Notification ring disabled for workspace %u\n", workspace_id);
                 }
             }
@@ -993,13 +1038,15 @@ static void
 clear_all_notification_rings(AppState *state)
 {
     for (guint i = 0; i < state->workspace_count; i++) {
-        if (state->workspaces[i].has_notification_ring) {
-            state->workspaces[i].has_notification_ring = FALSE;
+        WorkspaceData *ws = &state->workspaces[i];
+        if (ws->has_notification_ring) {
+            ws->has_notification_ring = FALSE;
         }
-    }
-    
-    if (state->terminal_container != NULL) {
-        gtk_widget_remove_css_class(state->terminal_container, "notification-ring");
+        
+        /* Clear ring on this workspace's terminal container */
+        if (ws->terminal_container != NULL) {
+            gtk_widget_remove_css_class(ws->terminal_container, "notification-ring");
+        }
     }
     
     refresh_sidebar(state);
@@ -1811,14 +1858,19 @@ void
 switch_to_workspace(void *state_ptr, guint workspace_id)
 {
     AppState *state = (AppState *)state_ptr;
+    guint old_workspace_id = state->active_workspace_id;
     state->active_workspace_id = workspace_id;
     
-    /* Find workspace index */
+    /* Find workspace index and track previous workspace */
     guint ws_idx = 0xFFFFFFFF;
+    guint prev_idx = 0xFFFFFFFF;
     for (guint i = 0; i < state->workspace_count; i++) {
         if (state->workspaces[i].id == workspace_id) {
             ws_idx = i;
             state->workspaces[i].is_active = TRUE;
+        } else if (state->workspaces[i].id == old_workspace_id) {
+            prev_idx = i;
+            state->workspaces[i].is_active = FALSE;
         } else {
             state->workspaces[i].is_active = FALSE;
         }
@@ -1835,6 +1887,31 @@ switch_to_workspace(void *state_ptr, guint workspace_id)
         GtkWidget *win = g_ptr_array_index(state->workspace_windows, ws_idx);
         gtk_widget_set_visible(win, TRUE);
         gtk_window_present(GTK_WINDOW(win));
+    }
+    
+    /* In non-windowed mode, switch terminal visibility */
+    if (!state->windowed_mode) {
+        /* Hide previous workspace's terminal */
+        if (prev_idx < state->workspace_count) {
+            WorkspaceData *prev_ws = &state->workspaces[prev_idx];
+            if (prev_ws->terminal) {
+                GtkWidget *term_widget = terminal_get_widget(prev_ws->terminal);
+                gtk_widget_set_visible(term_widget, FALSE);
+            }
+        }
+        
+        /* Show current workspace's terminal */
+        if (ws_idx < state->workspace_count) {
+            WorkspaceData *ws = &state->workspaces[ws_idx];
+            if (ws->terminal) {
+                GtkWidget *term_widget = terminal_get_widget(ws->terminal);
+                gtk_widget_set_visible(term_widget, TRUE);
+                
+                /* Set attention callback for OSC 777 */
+                VteTerminalData *vte_data = (VteTerminalData *)((TerminalBackendVte *)ws->terminal)->vte_data;
+                vte_terminal_set_attention_callback(vte_data, on_terminal_attention, state);
+            }
+        }
     }
     
     refresh_sidebar(state);
@@ -1882,6 +1959,17 @@ close_workspace(AppState *state, guint workspace_id)
                 kill(ws->child_pid, SIGTERM);
                 waitpid(ws->child_pid, NULL, 0);
             }
+            
+            /* Destroy terminal if exists (per-workspace terminals) */
+            if (ws->terminal && !state->windowed_mode) {
+                GtkWidget *term_widget = terminal_get_widget(ws->terminal);
+                if (term_widget && gtk_widget_get_parent(term_widget)) {
+                    gtk_widget_unparent(term_widget);
+                }
+                terminal_destroy(ws->terminal);
+                ws->terminal = NULL;
+            }
+            
             g_free(ws->name);
             g_free(ws->cwd);
             g_free(ws->git_branch);
@@ -1897,6 +1985,10 @@ close_workspace(AppState *state, guint workspace_id)
             if (state->active_workspace_id == workspace_id) {
                 state->active_workspace_id = state->workspace_count > 0 ? 
                     state->workspaces[0].id : 0;
+                /* Switch to the new active workspace to show its terminal */
+                if (state->active_workspace_id > 0) {
+                    switch_to_workspace(state, state->active_workspace_id);
+                }
             }
             
             refresh_sidebar(state);
@@ -2607,35 +2699,8 @@ activate(GtkApplication *app, gpointer user_data)
     gtk_widget_set_hexpand(content, TRUE);
     gtk_widget_set_vexpand(content, TRUE);
     
-    /* Terminal container with notification ring support */
-    state->terminal_container = gtk_frame_new(NULL);
-    gtk_widget_set_hexpand(state->terminal_container, TRUE);
-    gtk_widget_set_vexpand(state->terminal_container, TRUE);
-    gtk_widget_add_css_class(state->terminal_container, "terminal-frame");
-    
-    /* Create VTE terminal */
-    VteTerminalData *term = vte_terminal_create();
-    state->terminal_view = vte_terminal_get_widget(term);
-    state->terminal_data = term;
-    
-    /* Set up attention callback for OSC 777 (Ring of Fire) */
-    vte_terminal_set_attention_callback(term, on_terminal_attention, state);
-    
-    /* Create key controller to intercept keyboard shortcuts BEFORE VTE consumes them.
-     * Adding to terminal_view (VTE widget) at CAPTURE phase should intercept first. */
-    GtkEventController *key_overlay = gtk_event_controller_key_new();
-    gtk_event_controller_set_propagation_phase(key_overlay, GTK_PHASE_CAPTURE);
-    g_signal_connect(key_overlay, "key-pressed", G_CALLBACK(on_key_pressed), state);
-    gtk_widget_add_controller(state->terminal_view, key_overlay);
-    
-    /* Right-click menu handler for terminal (VAL-TERM-005) */
-    GtkGesture *right_click = gtk_gesture_click_new();
-    gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(right_click), GDK_BUTTON_SECONDARY);
-    g_signal_connect(right_click, "pressed", G_CALLBACK(on_terminal_right_click), state);
-    gtk_widget_add_controller(state->terminal_view, GTK_EVENT_CONTROLLER(right_click));
-    
-    gtk_frame_set_child(GTK_FRAME(state->terminal_container), state->terminal_view);
-    gtk_box_append(GTK_BOX(content), state->terminal_container);
+    /* Terminals are created per-workspace in add_workspace().
+     * The terminal_container for each workspace is stored in ws->terminal_container. */
     
     /* Store content (terminal area) for use as the first pane in browser splits (VAL-BROWSER-002) */
     state->terminal_area = content;
@@ -3021,9 +3086,16 @@ activate(GtkApplication *app, gpointer user_data)
         
         g_print("Session restored: %u workspace(s), active=%u\n", 
                 state->workspace_count, state->active_workspace_id);
+        
+        /* Switch to the active workspace to show its terminal */
+        if (state->active_workspace_id > 0 && state->workspace_count > 0) {
+            switch_to_workspace(state, state->active_workspace_id);
+        }
     } else {
         /* No session or empty session - create initial workspace */
         create_new_workspace(state);
+        /* Switch to the new workspace to show its terminal */
+        switch_to_workspace(state, state->active_workspace_id);
     }
     
     /* Add demo notifications to test the notification panel (VAL-NOTIF-003, VAL-NOTIF-004) */
