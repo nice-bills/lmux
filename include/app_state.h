@@ -13,6 +13,8 @@
 
 #include <gtk/gtk.h>
 
+typedef struct TerminalBackend TerminalBackend;
+
 /* ============================================================================
  * Constants
  * ============================================================================ */
@@ -37,6 +39,7 @@ typedef struct {
     gboolean has_notification_ring;
     int master_fd;
     pid_t child_pid;
+    TerminalBackend *terminal;
 } WorkspaceData;
 
 /* ============================================================================
