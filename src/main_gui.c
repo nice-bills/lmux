@@ -2675,6 +2675,16 @@ on_socket_command(CmuxSocketServer *server,
     return resp;
 }
 
+/* Draw callback for window transparency */
+static gboolean
+window_draw_transparency(GtkWidget* widget, cairo_t* cr, gpointer data)
+{
+    cairo_set_source_rgba(cr, 0.192, 0.192, 0.275, 0.95);
+    cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
+    cairo_paint(cr);
+    return FALSE;
+}
+
 /* Main application activate */
 static void
 activate(GtkApplication *app, gpointer user_data)
@@ -2702,6 +2712,15 @@ activate(GtkApplication *app, gpointer user_data)
     state->window = gtk_application_window_new(app);
     gtk_window_set_title(GTK_WINDOW(state->window), "cmux-linux");
     gtk_window_set_default_size(GTK_WINDOW(state->window), 1200, 700);
+    
+    /* Enable RGBA for transparency support */
+    GdkScreen* screen = gtk_widget_get_screen(state->window);
+    GdkVisual* visual = gdk_screen_get_rgba_visual(screen);
+    if (visual) {
+        gtk_widget_set_visual(state->window, visual);
+    }
+    gtk_widget_set_app_paintable(state->window, TRUE);
+    g_signal_connect(state->window, "draw", G_CALLBACK(window_draw_transparency), NULL);
     
     /* Set up keyboard controller for shortcuts - must intercept BEFORE VTE processes keys */
     GtkEventController *key_controller = gtk_event_controller_key_new();
