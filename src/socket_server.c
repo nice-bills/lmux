@@ -1079,3 +1079,131 @@ daemon_send_notification(const gchar *method, const gchar *params)
 
     return TRUE;
 }
+
+/* ============================================================================
+ * Daemon PTY Management
+ * ============================================================================ */
+
+static guint next_pty_request_id = 1;
+
+gint
+daemon_pty_spawn(guint workspace_id, const gchar *cwd, gchar **argv,
+                  gint *master_fd, gint *child_pid)
+{
+    if (!daemon_connected || !daemon_output) {
+        g_printerr("Daemon PTY: Not connected to daemon\n");
+        return -1;
+    }
+
+    gchar *argv_json = NULL;
+    if (argv && argv[0]) {
+        GString *arr = g_string_new("[");
+        for (gint i = 0; argv[i] != NULL; i++) {
+            if (i > 0) g_string_append_c(arr, ',');
+            g_string_append_printf(arr, "\"%s\"", argv[i]);
+        }
+        g_string_append_c(arr, ']');
+        argv_json = g_string_free(arr, FALSE);
+    } else {
+        argv_json = g_strdup("[\"/bin/bash\"]");
+    }
+
+    guint req_id = next_pty_request_id++;
+    gchar *params = g_strdup_printf(
+        "{\"workspace_id\":%u,\"cwd\":\"%s\",\"argv\":%s}",
+        workspace_id, cwd ? cwd : "/", argv_json);
+
+    g_free(argv_json);
+
+    gchar *request = ipc_create_request("pty.spawn", req_id, params);
+    g_free(params);
+
+    GError *error = NULL;
+    gsize written;
+
+    gchar *msg = g_strdup_printf("%s\n", request);
+    g_free(request);
+
+    if (!g_output_stream_write_all(daemon_output, msg, strlen(msg),
+                                   &written, NULL, &error)) {
+        g_printerr("Daemon PTY: Failed to send spawn request: %s\n",
+                   error ? error->message : "unknown");
+        g_error_free(error);
+        g_free(msg);
+        return -1;
+    }
+    g_free(msg);
+
+    if (!daemon_input) {
+        return -1;
+    }
+
+    gchar *response = NULL;
+    if (!daemon_client_read_response(daemon_input, &response, &error)) {
+        g_printerr("Daemon PTY: Failed to read spawn response: %s\n",
+                   error ? error->message : "unknown");
+        if (error) g_error_free(error);
+        return -1;
+    }
+
+    gint result = -1;
+    gint daemon_master_fd = -1;
+    gint daemon_child_pid = -1;
+
+    if (response) {
+        if (strstr(response, "\"result\":")) {
+            int parsed = sscanf(response, "%*[^{]\"result\":{\"master_fd\":%d,\"child_pid\":%d",
+                               &daemon_master_fd, &daemon_child_pid);
+            if (parsed >= 2) {
+                result = 0;
+            } else {
+                const gchar *err_start = strstr(response, "\"error\":");
+                if (err_start) {
+                    g_printerr("Daemon PTY: Spawn error: %s\n", err_start);
+                }
+            }
+        }
+        g_free(response);
+    }
+
+    if (master_fd) *master_fd = daemon_master_fd;
+    if (child_pid) *child_pid = daemon_child_pid;
+
+    return result;
+}
+
+gint
+daemon_pty_write(guint workspace_id, const gchar *data, gsize len)
+{
+    if (!daemon_connected || !daemon_output) {
+        return -1;
+    }
+
+    gchar *data_b64 = g_base64_encode((const guchar *)data, len);
+    gchar *params = g_strdup_printf(
+        "{\"workspace_id\":%u,\"data\":\"%s\"}",
+        workspace_id, data_b64);
+    g_free(data_b64);
+
+    gboolean ok = daemon_send_notification("pty.write", params);
+    g_free(params);
+
+    return ok ? 0 : -1;
+}
+
+gint
+daemon_pty_resize(guint workspace_id, gint rows, gint cols)
+{
+    if (!daemon_connected || !daemon_output) {
+        return -1;
+    }
+
+    gchar *params = g_strdup_printf(
+        "{\"workspace_id\":%u,\"rows\":%d,\"cols\":%d}",
+        workspace_id, rows, cols);
+
+    gboolean ok = daemon_send_notification("pty.resize", params);
+    g_free(params);
+
+    return ok ? 0 : -1;
+}

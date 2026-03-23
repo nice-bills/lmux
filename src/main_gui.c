@@ -621,6 +621,22 @@ add_workspace(AppState *state, guint id, const gchar *name, const gchar *cwd)
         GtkWidget *item = create_sidebar_item(ws, state, idx);
         gtk_box_append(GTK_BOX(state->sidebar_box), item);
         
+        /* Try to use daemon PTY if connected */
+        if (daemon_is_connected()) {
+            gchar *argv[] = {"/bin/bash", NULL};
+            gint daemon_master_fd = -1;
+            gint daemon_child_pid = -1;
+            
+            if (daemon_pty_spawn(id, cwd, argv, &daemon_master_fd, &daemon_child_pid) == 0) {
+                ws->master_fd = daemon_master_fd;
+                ws->child_pid = daemon_child_pid;
+                g_print("Using daemon PTY for workspace %s (master_fd=%d, child_pid=%d)\n",
+                        name, daemon_master_fd, daemon_child_pid);
+            } else {
+                g_print("Daemon PTY spawn failed for workspace %s, using direct mode\n", name);
+            }
+        }
+        
         /* Create terminal for this workspace */
         ws->terminal = terminal_create(BACKEND_VTE);
         if (ws->terminal) {
@@ -2436,11 +2452,31 @@ handle_terminal_command(CmuxTerminalCommand *command, AppState *state)
             return cmux_terminal_format_send_response(target_ws->id, text_len);
         }
 
-        /* Write to real PTY master */
+        /* Write to real PTY master - try daemon first if connected */
         gsize bytes_written = 0;
-        gboolean ok = cmux_terminal_send_to_pty(target_ws->master_fd,
-                                                 command->text, 0,
-                                                 &bytes_written);
+        gboolean ok = FALSE;
+        
+        if (daemon_is_connected() && target_ws->master_fd >= 0) {
+            /* Use daemon PTY write */
+            if (daemon_pty_write(target_ws->id, command->text, strlen(command->text)) == 0) {
+                bytes_written = strlen(command->text);
+                ok = TRUE;
+                g_print("Socket terminal.send [ws=%u, daemon PTY]: wrote %zu bytes\n",
+                        target_ws->id, bytes_written);
+            }
+        }
+        
+        if (!ok) {
+            /* Fall back to direct PTY write */
+            ok = cmux_terminal_send_to_pty(target_ws->master_fd,
+                                            command->text, 0,
+                                            &bytes_written);
+            if (ok) {
+                g_print("Socket terminal.send [ws=%u, direct PTY]: wrote %zu bytes\n",
+                        target_ws->id, bytes_written);
+            }
+        }
+        
         if (!ok) {
             return cmux_terminal_format_error_response("failed to write to terminal");
         }
@@ -2648,6 +2684,19 @@ activate(GtkApplication *app, gpointer user_data)
     
     /* Initialize shared CSS */
     lmux_css_init();
+    
+    /* Try to connect to lmuxd daemon */
+    {
+        const gchar *runtime_dir = g_get_user_runtime_dir();
+        gchar sock_path[256];
+        g_snprintf(sock_path, sizeof(sock_path), "%s/lmux.sock", runtime_dir ? runtime_dir : "/tmp");
+        
+        if (socket_connect_to_daemon(sock_path) >= 0) {
+            g_print("Connected to lmuxd daemon at %s\n", sock_path);
+        } else {
+            g_print("Daemon not available at %s, running in standalone mode\n", sock_path);
+        }
+    }
     
     /* Create the main window */
     state->window = gtk_application_window_new(app);
