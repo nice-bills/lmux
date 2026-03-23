@@ -18,6 +18,26 @@
 #include <gtk/gtk.h>
 #include <vte-2.91-gtk4/vte/vte.h>
 
+/* Include TerminalBackend interface */
+#include "terminal_backend.h"
+
+/* TerminalBackendVte - wraps VteTerminalData to implement TerminalBackend interface */
+typedef struct {
+    BackendType type;
+    VteTerminalData *vte_data;
+} TerminalBackendVte;
+
+/* Forward declaration for TerminalBackend interface */
+TerminalBackend *terminal_create_vte(void);
+void terminal_destroy_vte(TerminalBackend *tb);
+int terminal_spawn_vte(TerminalBackend *tb, const char* cwd, char** argv, int* master_fd);
+void terminal_resize_vte(TerminalBackend *tb, int rows, int cols);
+void terminal_write_vte(TerminalBackend *tb, const char* data, size_t len);
+GtkWidget *terminal_get_widget_vte(TerminalBackend *tb);
+pid_t terminal_get_pid_vte(TerminalBackend *tb);
+char *terminal_get_cwd_vte(TerminalBackend *tb);
+gboolean terminal_is_running_vte(TerminalBackend *tb);
+
 /* Terminal data structure */
 typedef struct {
     GtkWidget *terminal;     /* VTE terminal widget */
@@ -511,6 +531,100 @@ vte_terminal_free(VteTerminalData *term)
     }
     g_free(term->working_directory);
     g_free(term);
+}
+
+/* TerminalBackend interface implementation for VTE */
+
+/* Create VTE terminal backend */
+TerminalBackend *
+terminal_create_vte(void)
+{
+    TerminalBackendVte *tb = g_malloc0(sizeof(TerminalBackendVte));
+    tb->type = BACKEND_VTE;
+    tb->vte_data = vte_terminal_create();
+    return (TerminalBackend *)tb;
+}
+
+/* Destroy VTE terminal backend */
+void
+terminal_destroy_vte(TerminalBackend *tb)
+{
+    if (!tb) return;
+    TerminalBackendVte *vte_tb = (TerminalBackendVte *)tb;
+    if (vte_tb->vte_data) {
+        vte_terminal_free(vte_tb->vte_data);
+    }
+    g_free(vte_tb);
+}
+
+/* Spawn shell in VTE terminal - VTE manages PTY internally, so master_fd = -1 */
+int
+terminal_spawn_vte(TerminalBackend *tb, const char *cwd, char **argv, int *master_fd)
+{
+    if (!tb) return -1;
+    TerminalBackendVte *vte_tb = (TerminalBackendVte *)tb;
+    (void)cwd;
+    (void)argv;
+    if (master_fd) {
+        *master_fd = -1;
+    }
+    return 0;
+}
+
+/* Resize VTE terminal */
+void
+terminal_resize_vte(TerminalBackend *tb, int rows, int cols)
+{
+    if (!tb) return;
+    TerminalBackendVte *vte_tb = (TerminalBackendVte *)tb;
+    vte_terminal_resize(vte_tb->vte_data, rows, cols);
+}
+
+/* Write to VTE terminal */
+void
+terminal_write_vte(TerminalBackend *tb, const char *data, size_t len)
+{
+    if (!tb || !data) return;
+    TerminalBackendVte *vte_tb = (TerminalBackendVte *)tb;
+    char *text = g_strndup(data, len);
+    vte_terminal_send_text(vte_tb->vte_data, text);
+    g_free(text);
+}
+
+/* Get VTE terminal widget */
+GtkWidget *
+terminal_get_widget_vte(TerminalBackend *tb)
+{
+    if (!tb) return NULL;
+    TerminalBackendVte *vte_tb = (TerminalBackendVte *)tb;
+    return vte_terminal_get_widget(vte_tb->vte_data);
+}
+
+/* Get VTE terminal PID */
+pid_t
+terminal_get_pid_vte(TerminalBackend *tb)
+{
+    if (!tb) return -1;
+    TerminalBackendVte *vte_tb = (TerminalBackendVte *)tb;
+    return vte_terminal_get_pid(vte_tb->vte_data);
+}
+
+/* Get VTE terminal working directory */
+char *
+terminal_get_cwd_vte(TerminalBackend *tb)
+{
+    if (!tb) return g_strdup("/");
+    TerminalBackendVte *vte_tb = (TerminalBackendVte *)tb;
+    return vte_terminal_get_cwd(vte_tb->vte_data);
+}
+
+/* Check if VTE terminal is running */
+gboolean
+terminal_is_running_vte(TerminalBackend *tb)
+{
+    if (!tb) return FALSE;
+    TerminalBackendVte *vte_tb = (TerminalBackendVte *)tb;
+    return vte_terminal_is_running(vte_tb->vte_data);
 }
 
 #endif /* VTE_TERMINAL_H */
