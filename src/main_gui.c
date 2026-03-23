@@ -65,7 +65,7 @@ struct _AppState {
     GtkWidget *content_area;
     GtkWidget *terminal_container;
     GtkWidget *terminal_area;
-    VteTerminalData *terminal_data;
+    LmuxVteTerminal *terminal_data;
     GtkWidget *terminal_view;
     
     /* Workspaces */
@@ -659,7 +659,7 @@ add_workspace(AppState *state, guint id, const gchar *name, const gchar *cwd)
             gtk_widget_set_visible(frame, ws->is_active);
             
             /* Set attention callback for OSC 777 */
-            VteTerminalData *vte_data = (VteTerminalData *)((TerminalBackendVte *)ws->terminal)->vte_data;
+            LmuxVteTerminal *vte_data = (LmuxVteTerminal *)((TerminalBackendVte *)ws->terminal)->lmux_vte;
             vte_terminal_set_attention_callback(vte_data, on_terminal_attention, state);
             
             /* Create key controller to intercept keyboard shortcuts BEFORE VTE consumes them.
@@ -1924,7 +1924,7 @@ switch_to_workspace(void *state_ptr, guint workspace_id)
                 gtk_widget_set_visible(term_widget, TRUE);
                 
                 /* Set attention callback for OSC 777 */
-                VteTerminalData *vte_data = (VteTerminalData *)((TerminalBackendVte *)ws->terminal)->vte_data;
+                LmuxVteTerminal *vte_data = (LmuxVteTerminal *)((TerminalBackendVte *)ws->terminal)->lmux_vte;
                 vte_terminal_set_attention_callback(vte_data, on_terminal_attention, state);
             }
         }
@@ -2713,13 +2713,10 @@ activate(GtkApplication *app, gpointer user_data)
     gtk_window_set_title(GTK_WINDOW(state->window), "cmux-linux");
     gtk_window_set_default_size(GTK_WINDOW(state->window), 1200, 700);
     
-    /* Enable RGBA for transparency support */
-    GdkScreen* screen = gtk_widget_get_screen(state->window);
-    GdkVisual* visual = gdk_screen_get_rgba_visual(screen);
-    if (visual) {
-        gtk_widget_set_visual(state->window, visual);
-    }
-    gtk_widget_set_app_paintable(state->window, TRUE);
+    /* Enable RGBA for transparency support - GTK4 uses different API */
+    /* These APIs were removed in GTK4: gtk_widget_get_screen, gdk_screen_get_rgba_visual,
+     * gtk_widget_set_visual, gtk_widget_set_app_paintable */
+    /* For GTK4 transparency, CSS-based approaches are used instead */
     g_signal_connect(state->window, "draw", G_CALLBACK(window_draw_transparency), NULL);
     
     /* Set up keyboard controller for shortcuts - must intercept BEFORE VTE processes keys */

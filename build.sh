@@ -38,10 +38,12 @@ echo "Using WebKitGTK 6.0"
 # Check for optional ghostty
 GHOSTTY_CFLAGS=""
 GHOSTTY_LIBS=""
+HAVE_GHOSTTY=0
 if pkg-config --exists libghostty-vt 2>/dev/null; then
     echo "Using libghostty-vt for GPU-accelerated rendering"
-    GHOSTTY_CFLAGS="$(pkg-config --cflags libghostty-vt 2>/dev/null)"
+    GHOSTTY_CFLAGS="$(pkg-config --cflags libghostty-vt 2>/dev/null) -DHAVE_GHOSTTY"
     GHOSTTY_LIBS="$(pkg-config --libs libghostty-vt 2>/dev/null)"
+    HAVE_GHOSTTY=1
 else
     echo "Ghostty not available - using VTE fallback"
 fi
@@ -86,10 +88,10 @@ echo "  Built: ./lmuxd"
 # ============================================================
 # Build lmux (GUI client)
 # ============================================================
-SOURCES="src/main_gui.c src/vte_terminal.h src/browser.c src/notification.c src/workspace_commands.c src/terminal_commands.c src/focus_commands.c src/session_persistence.c src/lmux_css.c src/shortcuts_help.c src/workspace_dialogs.c src/window_decorations.c src/socket_server.c src/settings.c src/layer_shell.c"
+SOURCES="src/main_gui.c src/browser.c src/notification.c src/workspace_commands.c src/terminal_commands.c src/focus_commands.c src/session_persistence.c src/lmux_css.c src/shortcuts_help.c src/workspace_dialogs.c src/window_decorations.c src/terminal_backend.c src/socket_server.c src/settings.c src/layer_shell.c src/vte_terminal.c"
 
 # Add ghostty terminal if available
-if [ -n "$GHOSTTY_CFLAGS" ]; then
+if [ "$HAVE_GHOSTTY" = "1" ]; then
     SOURCES="$SOURCES src/ghostty_terminal.c"
 fi
 

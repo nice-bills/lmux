@@ -7,37 +7,15 @@
 
 #pragma once
 
-#include <ghostty/vt.h>
+#include <gtk/gtk.h>
 
-/* Ghostty terminal instance wrapper */
-typedef struct {
-    GhosttyTerminal terminal;
-    GtkWidget *drawing_area;  /* OpenGL rendering surface */
-    gboolean using_ghostty;
-    
-    /* Configuration */
-    guint cols;
-    guint rows;
-    
-    /* State */
-    GPid child_pid;
-    gchar *working_directory;
-} GhosttyTerminalData;
+typedef struct _GhosttyTerminalData GhosttyTerminalData;
 
-/* Create ghostty terminal */
-GhosttyTerminalData* ghostty_terminal_create(guint cols, guint rows);
-
-/* Destroy ghostty terminal */
-void ghostty_terminal_destroy(GhosttyTerminalData *term);
-
-/* Resize terminal */
-void ghostty_terminal_resize(GhosttyTerminalData *term, guint cols, guint rows);
-
-/* Write to terminal (send input) */
-void ghostty_terminal_send(GhosttyTerminalData *term, const gchar *text, gsize len);
-
-/* Get widget for embedding */
-GtkWidget* ghostty_terminal_get_widget(GhosttyTerminalData *term);
-
-/* Check if using ghostty */
+GhosttyTerminalData* lmux_ghostty_terminal_create(guint cols, guint rows);
+void lmux_ghostty_terminal_destroy(GhosttyTerminalData *term);
+void lmux_ghostty_terminal_resize(GhosttyTerminalData *term, guint cols, guint rows);
+void lmux_ghostty_terminal_send(GhosttyTerminalData *term, const gchar *text, gsize len);
+GtkWidget* lmux_ghostty_terminal_get_widget(GhosttyTerminalData *term);
+GPid lmux_ghostty_terminal_get_child_pid(GhosttyTerminalData *term);
+const gchar* lmux_ghostty_terminal_get_working_directory(GhosttyTerminalData *term);
 gboolean ghostty_is_available(void);

@@ -5,23 +5,35 @@
  */
 
 #include "ghostty_terminal.h"
-#include "terminal_backend.h"
 #include <gtk/gtk.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <sys/wait.h>
 #include <pty.h>
 
+#ifdef HAVE_GHOSTTY
+#include <ghostty/vt.h>
+
+struct _GhosttyTerminalData {
+    GhosttyTerminal terminal;
+    GtkWidget *drawing_area;
+    gboolean using_ghostty;
+    
+    guint cols;
+    guint rows;
+    
+    GPid child_pid;
+    gchar *working_directory;
+};
+
 static gboolean g_ghostty_available = FALSE;
 static gboolean g_checked = FALSE;
 
-/* Check if ghostty is available */
 gboolean
 ghostty_is_available(void)
 {
     if (!g_checked) {
         g_checked = TRUE;
-        /* Try to create a ghostty terminal to check availability */
         GhosttyTerminal test_terminal = NULL;
         GhosttyTerminalOptions opts = {
             .cols = 80,
@@ -41,9 +53,8 @@ ghostty_is_available(void)
     return g_ghostty_available;
 }
 
-/* Create ghostty terminal */
 GhosttyTerminalData*
-ghostty_terminal_create(guint cols, guint rows)
+lmux_ghostty_terminal_create(guint cols, guint rows)
 {
     GhosttyTerminalData *term = g_malloc0(sizeof(GhosttyTerminalData));
     term->cols = cols;
@@ -79,9 +90,8 @@ ghostty_terminal_create(guint cols, guint rows)
     return term;
 }
 
-/* Destroy ghostty terminal */
 void
-ghostty_terminal_destroy(GhosttyTerminalData *term)
+lmux_ghostty_terminal_destroy(GhosttyTerminalData *term)
 {
     if (!term) return;
     
@@ -98,9 +108,8 @@ ghostty_terminal_destroy(GhosttyTerminalData *term)
     g_free(term);
 }
 
-/* Resize terminal */
 void
-ghostty_terminal_resize(GhosttyTerminalData *term, guint cols, guint rows)
+lmux_ghostty_terminal_resize(GhosttyTerminalData *term, guint cols, guint rows)
 {
     if (!term || !term->terminal) return;
     
@@ -112,147 +121,89 @@ ghostty_terminal_resize(GhosttyTerminalData *term, guint cols, guint rows)
     }
 }
 
-/* Send input to terminal */
 void
-ghostty_terminal_send(GhosttyTerminalData *term, const gchar *text, gsize len)
+lmux_ghostty_terminal_send(GhosttyTerminalData *term, const gchar *text, gsize len)
 {
     if (!term || !term->terminal || !text) return;
     
     ghostty_terminal_vt_write(term->terminal, (const uint8_t*)text, len);
 }
 
-/* Get widget for embedding */
 GtkWidget*
-ghostty_terminal_get_widget(GhosttyTerminalData *term)
+lmux_ghostty_terminal_get_widget(GhosttyTerminalData *term)
 {
     return term ? term->drawing_area : NULL;
 }
 
-/* TerminalBackendGhostty implementation */
-
-struct TerminalBackendGhostty {
-    BackendType type;
-    GhosttyTerminalData *ghostty_data;
-    int master_fd;
-};
-
-TerminalBackend*
-terminal_create_ghostty(void)
+GPid
+lmux_ghostty_terminal_get_child_pid(GhosttyTerminalData *term)
 {
-    TerminalBackendGhostty *tb = g_malloc0(sizeof(TerminalBackendGhostty));
-    tb->type = BACKEND_GHOSTTY;
-    tb->master_fd = -1;
-    
-    tb->ghostty_data = ghostty_terminal_create(80, 24);
-    if (!tb->ghostty_data) {
-        g_free(tb);
-        return NULL;
-    }
-    
-    return (TerminalBackend*)tb;
+    return term ? term->child_pid : -1;
+}
+
+const gchar*
+lmux_ghostty_terminal_get_working_directory(GhosttyTerminalData *term)
+{
+    return term ? term->working_directory : NULL;
+}
+
+#else
+
+gboolean
+ghostty_is_available(void)
+{
+    return FALSE;
+}
+
+GhosttyTerminalData*
+lmux_ghostty_terminal_create(guint cols, guint rows)
+{
+    (void)cols;
+    (void)rows;
+    return NULL;
 }
 
 void
-terminal_destroy_ghostty(TerminalBackend *tb)
+lmux_ghostty_terminal_destroy(GhosttyTerminalData *term)
 {
-    if (!tb) return;
-    TerminalBackendGhostty *gt = (TerminalBackendGhostty*)tb;
-    
-    if (gt->master_fd >= 0) {
-        close(gt->master_fd);
-    }
-    
-    if (gt->ghostty_data) {
-        ghostty_terminal_destroy(gt->ghostty_data);
-    }
-    
-    g_free(gt);
-}
-
-int
-terminal_spawn_ghostty(TerminalBackend *tb, const char *cwd, char **argv, int *master_fd)
-{
-    if (!tb) return -1;
-    TerminalBackendGhostty *gt = (TerminalBackendGhostty*)tb;
-    
-    int master;
-    pid_t pid = forkpty(&master, NULL, NULL, NULL);
-    
-    if (pid == 0) {
-        if (cwd && chdir(cwd) != 0) {
-            perror("chdir");
-        }
-        execvp(argv[0], argv);
-        _exit(1);
-    }
-    
-    if (pid < 0) {
-        return -1;
-    }
-    
-    gt->master_fd = master;
-    gt->ghostty_data->child_pid = pid;
-    
-    if (cwd) {
-        gt->ghostty_data->working_directory = g_strdup(cwd);
-    }
-    
-    if (master_fd) {
-        *master_fd = master;
-    }
-    
-    return 0;
+    (void)term;
 }
 
 void
-terminal_resize_ghostty(TerminalBackend *tb, int rows, int cols)
+lmux_ghostty_terminal_resize(GhosttyTerminalData *term, guint cols, guint rows)
 {
-    if (!tb) return;
-    TerminalBackendGhostty *gt = (TerminalBackendGhostty*)tb;
-    ghostty_terminal_resize(gt->ghostty_data, cols, rows);
+    (void)term;
+    (void)cols;
+    (void)rows;
 }
 
 void
-terminal_write_ghostty(TerminalBackend *tb, const char *data, size_t len)
+lmux_ghostty_terminal_send(GhosttyTerminalData *term, const gchar *text, gsize len)
 {
-    if (!tb || !data) return;
-    TerminalBackendGhostty *gt = (TerminalBackendGhostty*)tb;
-    
-    if (gt->master_fd >= 0) {
-        write(gt->master_fd, data, len);
-    } else {
-        ghostty_terminal_send(gt->ghostty_data, data, len);
-    }
+    (void)term;
+    (void)text;
+    (void)len;
 }
 
 GtkWidget*
-terminal_get_widget_ghostty(TerminalBackend *tb)
+lmux_ghostty_terminal_get_widget(GhosttyTerminalData *term)
 {
-    if (!tb) return NULL;
-    TerminalBackendGhostty *gt = (TerminalBackendGhostty*)tb;
-    return ghostty_terminal_get_widget(gt->ghostty_data);
+    (void)term;
+    return NULL;
 }
 
-pid_t
-terminal_get_pid_ghostty(TerminalBackend *tb)
+GPid
+lmux_ghostty_terminal_get_child_pid(GhosttyTerminalData *term)
 {
-    if (!tb) return -1;
-    TerminalBackendGhostty *gt = (TerminalBackendGhostty*)tb;
-    return gt->ghostty_data->child_pid;
+    (void)term;
+    return -1;
 }
 
-char*
-terminal_get_cwd_ghostty(TerminalBackend *tb)
+const gchar*
+lmux_ghostty_terminal_get_working_directory(GhosttyTerminalData *term)
 {
-    if (!tb) return NULL;
-    TerminalBackendGhostty *gt = (TerminalBackendGhostty*)tb;
-    return g_strdup(gt->ghostty_data->working_directory);
+    (void)term;
+    return NULL;
 }
 
-gboolean
-terminal_is_running_ghostty(TerminalBackend *tb)
-{
-    if (!tb) return FALSE;
-    TerminalBackendGhostty *gt = (TerminalBackendGhostty*)tb;
-    return gt->ghostty_data->child_pid > 0;
-}
+#endif

@@ -19,7 +19,11 @@ typedef struct {
     int cols;
 } TerminalSize;
 
-typedef struct _TerminalBackend TerminalBackend;
+typedef struct _TerminalBackend {
+    BackendType type;
+    gpointer impl;
+    gboolean initialized;
+} TerminalBackend;
 
 TerminalBackend *terminal_create(BackendType type);
 void terminal_destroy(TerminalBackend *tb);

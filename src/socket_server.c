@@ -15,6 +15,7 @@
 #include "socket_server.h"
 
 #include <gio/gunixsocketaddress.h>
+#include <gio/gsocketclient.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -913,6 +914,19 @@ ipc_create_request(const gchar *method, guint id, const gchar *params)
     }
 }
 
+static gboolean
+daemon_client_read_response(GDataInputStream *input, gchar **response, GError **error)
+{
+    if (!input) {
+        return FALSE;
+    }
+    
+    gsize length = 0;
+    *response = g_data_input_stream_read_line(input, &length, NULL, error);
+    
+    return (*response != NULL);
+}
+
 gint
 socket_connect_to_daemon(const gchar *sock_path)
 {
@@ -931,7 +945,7 @@ socket_connect_to_daemon(const gchar *sock_path)
     }
 
     GSocketAddress *addr = g_unix_socket_address_new(path);
-    daemon_conn = g_socket_client_connect_to_address(client, addr, NULL, &error);
+    daemon_conn = g_socket_client_connect(client, G_SOCKET_CONNECTABLE(addr), NULL, &error);
     g_object_unref(addr);
 
     if (error) {
@@ -1026,7 +1040,7 @@ daemon_send_request(const gchar *method, guint id, const gchar *params)
     GError *read_error = NULL;
     gsize length = 0;
     gchar *response = g_data_input_stream_read_line(
-        daemon_input, NULL, &length, &read_error);
+        daemon_input, &length, NULL, &read_error);
 
     if (read_error) {
         g_printerr("Daemon client: Failed to read response: %s\n",

@@ -7,17 +7,13 @@
 
 #include "terminal_backend.h"
 #include "vte_terminal.h"
+#ifdef HAVE_GHOSTTY
 #include "ghostty_terminal.h"
+#endif
 #include <stdlib.h>
 #include <unistd.h>
 #include <sys/wait.h>
 #include <errno.h>
-
-struct TerminalBackend {
-    BackendType type;
-    gpointer impl;
-    gboolean initialized;
-};
 
 TerminalBackend *
 terminal_create(BackendType type)
@@ -28,7 +24,7 @@ terminal_create(BackendType type)
 
     switch (type) {
         case BACKEND_VTE: {
-            VteTerminalData *vte = vte_terminal_create();
+            LmuxVteTerminal *vte = vte_terminal_create();
             if (!vte) {
                 g_printerr("Failed to create VTE terminal\n");
                 g_free(tb);
@@ -39,8 +35,9 @@ terminal_create(BackendType type)
             g_print("Terminal backend: VTE created\n");
             break;
         }
+#ifdef HAVE_GHOSTTY
         case BACKEND_GHOSTTY: {
-            GhosttyTerminalData *ghostty = ghostty_terminal_create(80, 24);
+            GhosttyTerminalData *ghostty = lmux_ghostty_terminal_create(80, 24);
             if (!ghostty) {
                 g_printerr("Failed to create Ghostty terminal, falling back to VTE\n");
                 g_free(tb);
@@ -51,6 +48,7 @@ terminal_create(BackendType type)
             g_print("Terminal backend: Ghostty created\n");
             break;
         }
+#endif
         default:
             g_printerr("Unknown backend type: %d\n", type);
             g_free(tb);
@@ -68,11 +66,13 @@ terminal_destroy(TerminalBackend *tb)
 
     switch (tb->type) {
         case BACKEND_VTE:
-            vte_terminal_free((VteTerminalData *)tb->impl);
+            vte_terminal_free((LmuxVteTerminal *)tb->impl);
             break;
+#ifdef HAVE_GHOSTTY
         case BACKEND_GHOSTTY:
-            ghostty_terminal_destroy((GhosttyTerminalData *)tb->impl);
+            lmux_ghostty_terminal_destroy((GhosttyTerminalData *)tb->impl);
             break;
+#endif
     }
 
     g_free(tb);
@@ -91,8 +91,10 @@ terminal_spawn(TerminalBackend *tb, const char *cwd, char **argv, int *master_fd
     switch (tb->type) {
         case BACKEND_VTE:
             break;
+#ifdef HAVE_GHOSTTY
         case BACKEND_GHOSTTY:
             break;
+#endif
     }
 }
 
@@ -104,11 +106,13 @@ terminal_resize(TerminalBackend *tb, int rows, int cols)
 
     switch (tb->type) {
         case BACKEND_VTE:
-            vte_terminal_resize((VteTerminalData *)tb->impl, rows, cols);
+            vte_terminal_resize((LmuxVteTerminal *)tb->impl, rows, cols);
             break;
+#ifdef HAVE_GHOSTTY
         case BACKEND_GHOSTTY:
-            ghostty_terminal_resize((GhosttyTerminalData *)tb->impl, (guint)cols, (guint)rows);
+            lmux_ghostty_terminal_resize((GhosttyTerminalData *)tb->impl, (guint)cols, (guint)rows);
             break;
+#endif
     }
 }
 
@@ -120,11 +124,13 @@ terminal_write(TerminalBackend *tb, const char *data, size_t len)
 
     switch (tb->type) {
         case BACKEND_VTE:
-            vte_terminal_send_text((VteTerminalData *)tb->impl, data);
+            vte_terminal_send_text((LmuxVteTerminal *)tb->impl, data);
             break;
+#ifdef HAVE_GHOSTTY
         case BACKEND_GHOSTTY:
-            ghostty_terminal_send((GhosttyTerminalData *)tb->impl, data, len);
+            lmux_ghostty_terminal_send((GhosttyTerminalData *)tb->impl, data, len);
             break;
+#endif
     }
 }
 
@@ -136,9 +142,11 @@ terminal_get_widget(TerminalBackend *tb)
 
     switch (tb->type) {
         case BACKEND_VTE:
-            return vte_terminal_get_widget((VteTerminalData *)tb->impl);
+            return vte_terminal_get_widget((LmuxVteTerminal *)tb->impl);
+#ifdef HAVE_GHOSTTY
         case BACKEND_GHOSTTY:
-            return ghostty_terminal_get_widget((GhosttyTerminalData *)tb->impl);
+            return lmux_ghostty_terminal_get_widget((GhosttyTerminalData *)tb->impl);
+#endif
     }
 
     return NULL;
@@ -152,9 +160,11 @@ terminal_get_pid(TerminalBackend *tb)
 
     switch (tb->type) {
         case BACKEND_VTE:
-            return vte_terminal_get_pid((VteTerminalData *)tb->impl);
+            return vte_terminal_get_pid((LmuxVteTerminal *)tb->impl);
+#ifdef HAVE_GHOSTTY
         case BACKEND_GHOSTTY:
-            return ((GhosttyTerminalData *)tb->impl)->child_pid;
+            return lmux_ghostty_terminal_get_child_pid((GhosttyTerminalData *)tb->impl);
+#endif
     }
 
     return -1;
@@ -168,11 +178,13 @@ terminal_get_cwd(TerminalBackend *tb)
 
     switch (tb->type) {
         case BACKEND_VTE:
-            return vte_terminal_get_cwd((VteTerminalData *)tb->impl);
+            return vte_terminal_get_cwd((LmuxVteTerminal *)tb->impl);
+#ifdef HAVE_GHOSTTY
         case BACKEND_GHOSTTY: {
-            GhosttyTerminalData *ghostty = (GhosttyTerminalData *)tb->impl;
-            return ghostty->working_directory ? g_strdup(ghostty->working_directory) : g_strdup("/");
+            const gchar *wd = lmux_ghostty_terminal_get_working_directory((GhosttyTerminalData *)tb->impl);
+            return wd ? g_strdup(wd) : g_strdup("/");
         }
+#endif
     }
 
     return g_strdup("/");
@@ -186,9 +198,11 @@ terminal_is_running(TerminalBackend *tb)
 
     switch (tb->type) {
         case BACKEND_VTE:
-            return vte_terminal_is_running((VteTerminalData *)tb->impl);
+            return vte_terminal_is_running((LmuxVteTerminal *)tb->impl);
+#ifdef HAVE_GHOSTTY
         case BACKEND_GHOSTTY:
-            return ((GhosttyTerminalData *)tb->impl)->child_pid > 0;
+            return lmux_ghostty_terminal_get_child_pid((GhosttyTerminalData *)tb->impl) > 0;
+#endif
     }
 
     return FALSE;
