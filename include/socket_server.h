@@ -158,3 +158,61 @@ void switch_to_workspace(void *state, guint workspace_id);
 
 /* Get browser instance from AppState - for DOM extraction */
 BrowserInstance* socket_get_browser_instance(void *app_state);
+
+/* ============================================================================
+ * Daemon Client Mode
+ *
+ * The GUI can connect AS A CLIENT to the daemon (lmuxd) to:
+ * - Send commands to control the daemon
+ * - Request terminal I/O forwarding
+ * - Subscribe to workspace updates
+ * ============================================================================ */
+
+gint socket_connect_to_daemon(const gchar *sock_path);
+void socket_disconnect_from_daemon(void);
+gboolean daemon_is_connected(void);
+
+gchar* daemon_send_request(const gchar *method, guint id, const gchar *params);
+gchar* daemon_send_request_sync(const gchar *method, const gchar *params);
+gboolean daemon_send_notification(const gchar *method, const gchar *params);
+
+/**
+ * daemon_pty_spawn:
+ * @workspace_id: Workspace ID to create PTY for
+ * @cwd: Working directory for the new process (or NULL for home)
+ * @argv: Command argv array (NULL uses /bin/bash)
+ * @master_fd: Output parameter for master PTY fd (or NULL)
+ * @child_pid: Output parameter for child process PID (or NULL)
+ *
+ * Requests the daemon to spawn a new PTY for the given workspace.
+ * The daemon will fork a child process connected to a new PTY pair.
+ * The master fd is returned via @master_fd and can be used for I/O.
+ *
+ * Returns: 0 on success, -1 on error.
+ */
+gint daemon_pty_spawn(guint workspace_id, const gchar *cwd, gchar **argv,
+                      gint *master_fd, gint *child_pid);
+
+/**
+ * daemon_pty_write:
+ * @workspace_id: Workspace ID whose PTY to write to
+ * @data: Data to write
+ * @len: Length of data
+ *
+ * Writes data to the PTY belonging to the specified workspace.
+ *
+ * Returns: 0 on success, -1 on error.
+ */
+gint daemon_pty_write(guint workspace_id, const gchar *data, gsize len);
+
+/**
+ * daemon_pty_resize:
+ * @workspace_id: Workspace ID whose PTY to resize
+ * @rows: New row count
+ * @cols: New column count
+ *
+ * Resizes the PTY belonging to the specified workspace.
+ *
+ * Returns: 0 on success, -1 on error.
+ */
+gint daemon_pty_resize(guint workspace_id, gint rows, gint cols);

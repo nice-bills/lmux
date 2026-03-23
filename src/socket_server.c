@@ -9,6 +9,7 @@
  * - Each client connection gets its own GDataInputStream for line-based reads
  * - Welcome message is sent immediately on connection
  * - Commands are read line-by-line and dispatched via callback
+ * - Also supports CLIENT mode to connect to the daemon (lmuxd)
  */
 
 #include "socket_server.h"
@@ -886,4 +887,195 @@ handle_jsonrpc_request(struct CmuxJsonRpcRequest *req, gpointer user_data)
         g_free(error);
         return resp;
     }
+}
+
+/* ============================================================================
+ * Daemon Client Mode
+ * ============================================================================ */
+
+static GSocketConnection *daemon_conn = NULL;
+static GDataInputStream *daemon_input = NULL;
+static GOutputStream *daemon_output = NULL;
+static gboolean daemon_connected = FALSE;
+static gchar *daemon_socket_path = NULL;
+
+static gchar*
+ipc_create_request(const gchar *method, guint id, const gchar *params)
+{
+    if (params) {
+        return g_strdup_printf(
+            "{\"jsonrpc\":\"2.0\",\"method\":\"%s\",\"params\":%s,\"id\":%u}",
+            method, params, id);
+    } else {
+        return g_strdup_printf(
+            "{\"jsonrpc\":\"2.0\",\"method\":\"%s\",\"id\":%u}",
+            method, id);
+    }
+}
+
+gint
+socket_connect_to_daemon(const gchar *sock_path)
+{
+    if (daemon_connected && daemon_conn) {
+        g_print("Daemon client: Already connected to %s\n",
+                daemon_socket_path ? daemon_socket_path : "daemon");
+        return 0;
+    }
+
+    GSocketClient *client = g_socket_client_new();
+    GError *error = NULL;
+
+    const gchar *path = sock_path;
+    if (!path) {
+        path = g_strdup_printf("/run/user/%d/lmux.sock", getuid());
+    }
+
+    GSocketAddress *addr = g_unix_socket_address_new(path);
+    daemon_conn = g_socket_client_connect_to_address(client, addr, NULL, &error);
+    g_object_unref(addr);
+
+    if (error) {
+        g_printerr("Daemon client: Failed to connect to %s: %s\n",
+                   path, error->message);
+        g_error_free(error);
+        g_object_unref(client);
+        if (!sock_path) g_free((gchar *)path);
+        return -1;
+    }
+
+    GInputStream *raw_in = g_io_stream_get_input_stream(G_IO_STREAM(daemon_conn));
+    daemon_input = g_data_input_stream_new(raw_in);
+    g_data_input_stream_set_newline_type(daemon_input, G_DATA_STREAM_NEWLINE_TYPE_ANY);
+
+    daemon_output = g_io_stream_get_output_stream(G_IO_STREAM(daemon_conn));
+
+    daemon_socket_path = g_strdup(path);
+    daemon_connected = TRUE;
+
+    g_print("Daemon client: Connected to %s\n", path);
+    if (!sock_path) g_free((gchar *)path);
+    g_object_unref(client);
+
+    return 0;
+}
+
+void
+socket_disconnect_from_daemon(void)
+{
+    if (daemon_conn) {
+        GError *error = NULL;
+        g_io_stream_close(G_IO_STREAM(daemon_conn), NULL, &error);
+        if (error) {
+            g_error_free(error);
+        }
+        g_object_unref(daemon_conn);
+        daemon_conn = NULL;
+    }
+
+    if (daemon_input) {
+        g_object_unref(daemon_input);
+        daemon_input = NULL;
+    }
+
+    daemon_output = NULL;
+    daemon_connected = FALSE;
+
+    g_free(daemon_socket_path);
+    daemon_socket_path = NULL;
+
+    g_print("Daemon client: Disconnected\n");
+}
+
+gboolean
+daemon_is_connected(void)
+{
+    return daemon_connected;
+}
+
+gchar*
+daemon_send_request(const gchar *method, guint id, const gchar *params)
+{
+    if (!daemon_connected || !daemon_output) {
+        g_printerr("Daemon client: Not connected\n");
+        return NULL;
+    }
+
+    gchar *request = ipc_create_request(method, id, params);
+    GError *error = NULL;
+    gsize written;
+
+    gchar *msg = g_strdup_printf("%s\n", request);
+
+    if (!g_output_stream_write_all(daemon_output, msg, strlen(msg),
+                                    &written, NULL, &error)) {
+        g_printerr("Daemon client: Failed to send request: %s\n",
+                   error ? error->message : "unknown");
+        g_error_free(error);
+        g_free(msg);
+        g_free(request);
+        return NULL;
+    }
+
+    g_free(msg);
+    g_free(request);
+
+    if (!daemon_input) {
+        return NULL;
+    }
+
+    GError *read_error = NULL;
+    gsize length = 0;
+    gchar *response = g_data_input_stream_read_line(
+        daemon_input, NULL, &length, &read_error);
+
+    if (read_error) {
+        g_printerr("Daemon client: Failed to read response: %s\n",
+                   read_error->message);
+        g_error_free(read_error);
+        return NULL;
+    }
+
+    if (response == NULL) {
+        g_printerr("Daemon client: No response received\n");
+        return NULL;
+    }
+
+    return response;
+}
+
+gchar*
+daemon_send_request_sync(const gchar *method, const gchar *params)
+{
+    return daemon_send_request(method, 1, params);
+}
+
+gboolean
+daemon_send_notification(const gchar *method, const gchar *params)
+{
+    if (!daemon_connected || !daemon_output) {
+        return FALSE;
+    }
+
+    gchar *notification = ipc_create_request(method, 0, params);
+    GError *error = NULL;
+    gsize written;
+
+    gchar *msg = g_strdup_printf("%s\n", notification);
+
+    gboolean result = g_output_stream_write_all(daemon_output, msg, strlen(msg),
+                                                 &written, NULL, &error);
+
+    g_free(msg);
+    g_free(notification);
+
+    if (!result) {
+        if (error) {
+            g_printerr("Daemon client: Failed to send notification: %s\n",
+                       error->message);
+            g_error_free(error);
+        }
+        return FALSE;
+    }
+
+    return TRUE;
 }
