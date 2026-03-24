@@ -239,9 +239,17 @@ vte_terminal_create(void)
     
     vte_terminal_set_word_char_exceptions(vte, "-./?%&#=+@~");
     
+    GdkRGBA foreground = {0.85, 0.85, 0.85, 1.0};
+    GdkRGBA background = {0.12, 0.12, 0.12, 1.0};
+    vte_terminal_set_colors(vte, &foreground, &background, NULL, 0);
+    
     vte_terminal_set_audible_bell(vte, FALSE);
     
     vte_terminal_set_cursor_shape(vte, VTE_CURSOR_SHAPE_BLOCK);
+    
+    /* Explicitly set cursor color to be visible */
+    GdkRGBA cursor_color = {1.0, 1.0, 1.0, 1.0};  /* White cursor */
+    vte_terminal_set_color_cursor(vte, &cursor_color);
     
     gtk_widget_add_css_class(term->terminal, "terminal-text");
     
@@ -263,7 +271,13 @@ vte_terminal_create(void)
     
     vte_terminal_spawn(term);
     
+    /* Set initial size for proper rendering */
+    vte_terminal_set_size(vte, 80, 24);
+    
     gtk_widget_set_visible(term->container, TRUE);
+    
+    /* Queue resize to ensure proper allocation */
+    gtk_widget_queue_resize(term->terminal);
     
     return term;
 }

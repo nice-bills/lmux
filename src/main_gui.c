@@ -662,18 +662,14 @@ add_workspace(AppState *state, guint id, const gchar *name, const gchar *cwd)
             LmuxVteTerminal *vte_data = (LmuxVteTerminal *)ws->terminal->impl;
             vte_terminal_set_attention_callback(vte_data, on_terminal_attention, state);
             
-            /* Create key controller to intercept keyboard shortcuts BEFORE VTE consumes them.
-             * Adding to terminal_view (VTE widget) at CAPTURE phase should intercept first. */
-            GtkEventController *key_overlay = gtk_event_controller_key_new();
-            gtk_event_controller_set_propagation_phase(key_overlay, GTK_PHASE_CAPTURE);
-            g_signal_connect(key_overlay, "key-pressed", G_CALLBACK(on_key_pressed), state);
-            gtk_widget_add_controller(term_widget, key_overlay);
-            
             /* Right-click menu handler for terminal (VAL-TERM-005) */
             GtkGesture *right_click = gtk_gesture_click_new();
             gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(right_click), GDK_BUTTON_SECONDARY);
             g_signal_connect(right_click, "pressed", G_CALLBACK(on_terminal_right_click), state);
             gtk_widget_add_controller(term_widget, GTK_EVENT_CONTROLLER(right_click));
+            
+            /* Grab focus for the actual VTE terminal (not the container box) */
+            gtk_widget_grab_focus(vte_data->terminal);
             
             g_print("Created terminal for workspace %s\n", name);
         }
@@ -2719,17 +2715,11 @@ activate(GtkApplication *app, gpointer user_data)
     /* For GTK4 transparency, CSS-based approaches are used instead */
     /* draw signal doesn't exist on GtkApplicationWindow in GTK4 - removed */
     
-    /* Set up keyboard controller for shortcuts - must intercept BEFORE VTE processes keys */
+    /* Set up keyboard controller for shortcuts at BUBBLE phase so unhandled keys reach VTE */
     GtkEventController *key_controller = gtk_event_controller_key_new();
-    gtk_event_controller_set_propagation_phase(key_controller, GTK_PHASE_CAPTURE);
+    gtk_event_controller_set_propagation_phase(key_controller, GTK_PHASE_BUBBLE);
     g_signal_connect(key_controller, "key-pressed", G_CALLBACK(on_key_pressed), state);
     gtk_widget_add_controller(state->window, key_controller);
-    
-    /* Also intercept keys at terminal level to prevent VTE from consuming them */
-    GtkEventController *term_key_controller = gtk_event_controller_key_new();
-    gtk_event_controller_set_propagation_phase(term_key_controller, GTK_PHASE_CAPTURE);
-    g_signal_connect(term_key_controller, "key-pressed", G_CALLBACK(on_key_pressed), state);
-    /* Will be added after terminal is created */
     
     /* Set up window close handler (VAL-WIN-003) */
     g_signal_connect(state->window, "close-request", G_CALLBACK(on_window_close_requested), state);
