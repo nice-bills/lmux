@@ -11,8 +11,8 @@ import sys
 import os
 import json
 
-SOCKET_PATH = "/tmp/cmux-linux.sock"
-LMUX_PATH = "/home/bills/dev/cmux-linux/lmux"
+SOCKET_PATH = "/tmp/lmux.sock"
+LMUX_PATH = "/home/bills/dev/lmux/lmux"
 
 
 def wait_for_socket(timeout=10):

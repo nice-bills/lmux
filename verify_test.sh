@@ -4,7 +4,7 @@
 set -e
 
 cd /home/bills/dev/cmux-linux
-SOCKET="/tmp/cmux-linux.sock"
+SOCKET="/tmp/lmux.sock"
 
 echo "=========================================="
 echo "lmux Comprehensive Test"
@@ -76,7 +76,7 @@ test_ipc() {
 # Test socket greeting
 echo -n "   Socket greeting ... "
 greeting=$(echo "" | socat - UNIX-CONNECT:$SOCKET 2>/dev/null | head -1)
-if echo "$greeting" | grep -q "cmux-linux socket server ready"; then
+if echo "$greeting" | grep -q "lmux.socket server ready"; then
     echo "PASS"
 else
     echo "FAIL (got: $greeting)"

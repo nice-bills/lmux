@@ -9,8 +9,8 @@ import time
 import os
 import sys
 
-SOCKET_PATH = "/tmp/cmux-linux.sock"
-LMUX_PATH = "/home/bills/dev/cmux-linux/lmux"
+SOCKET_PATH = "/tmp/lmux.sock"
+LMUX_PATH = "/home/bills/dev/lmux/lmux"
 
 
 def cleanup():
@@ -107,7 +107,7 @@ def main():
     # Test greeting
     print("   Testing socket greeting...", end=" ")
     greeting = send_jsonrpc("")
-    if "cmux-linux socket server ready" in greeting:
+    if "lmux.socket server ready" in greeting:
         print("PASS")
     else:
         print(f"FAIL (got: {greeting[:100]})")
