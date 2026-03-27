@@ -3,11 +3,6 @@ project('lmux', 'c',
     default_options: ['warning_level=2', 'c_std=c17']
 )
 
-# Terminal backend option
-option('ghostty-backend', type : 'string', value : 'auto',
-       choices : ['auto', 'vte', 'ghostty'],
-       description : 'Terminal backend to use (auto uses VTE if available)')
-
 # Core dependencies
 gtk4_dep = dependency('gtk4')
 vte_dep = dependency('vte-2.91-gtk4')

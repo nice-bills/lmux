@@ -1,0 +1,1 @@
+option('ghostty-backend', type : 'string', value : 'auto', description : 'Terminal backend to use (auto uses VTE if available)')

@@ -279,6 +279,9 @@ vte_terminal_create(void)
     /* Queue resize to ensure proper allocation */
     gtk_widget_queue_resize(term->terminal);
     
+    /* Force redraw to ensure terminal content is visible */
+    gtk_widget_queue_draw(term->terminal);
+    
     return term;
 }
 
