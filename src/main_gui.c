@@ -1909,6 +1909,11 @@ switch_to_workspace(void *state_ptr, guint workspace_id)
             if (prev_ws->terminal) {
                 GtkWidget *term_widget = terminal_get_widget(prev_ws->terminal);
                 gtk_widget_set_visible(term_widget, FALSE);
+                
+                /* Also hide the terminal frame */
+                if (prev_ws->terminal_container) {
+                    gtk_widget_set_visible(prev_ws->terminal_container, FALSE);
+                }
             }
         }
         
@@ -1919,8 +1924,13 @@ switch_to_workspace(void *state_ptr, guint workspace_id)
                 GtkWidget *term_widget = terminal_get_widget(ws->terminal);
                 gtk_widget_set_visible(term_widget, TRUE);
                 
+                /* Also show the terminal frame */
+                if (ws->terminal_container) {
+                    gtk_widget_set_visible(ws->terminal_container, TRUE);
+                }
+                
                 /* Set attention callback for OSC 777 */
-                LmuxVteTerminal *vte_data = (LmuxVteTerminal *)((TerminalBackendVte *)ws->terminal)->lmux_vte;
+                LmuxVteTerminal *vte_data = (LmuxVteTerminal *)ws->terminal->impl;
                 vte_terminal_set_attention_callback(vte_data, on_terminal_attention, state);
             }
         }
